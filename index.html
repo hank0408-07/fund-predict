@@ -228,6 +228,7 @@ const S=(id)=>document.getElementById(id);
 const EMOJIS=['🚀','🐼','🦊','😎','🌟','🔥','🐉','🤖','👾','🦁','🐯','💎'];
 let avatar='🚀';
 const AUTH_KEY='FUND_PRO_AUTH';
+const CACHE_KEY='FUND_PRO_CACHE';
 
 function renderAvatar(el,av){
   if(av&&av.startsWith('data:')){el.innerHTML='<img src="'+av+'" alt="头像">'}
@@ -338,19 +339,42 @@ function predictPullback(closes){
 }
 
 /* ===== 主分析 ===== */
-async function go(){
+async function go(force){
+  // 缓存优先：30分钟内直接用缓存，秒开
+  if(!force){
+    try{
+      const c=JSON.parse(localStorage.getItem(CACHE_KEY)||'null');
+      if(c && Date.now()-c.t < 30*60*1000 && c.data && c.data.length){
+        S('statFunds').textContent=c.data.length;
+        S('statUp').textContent=c.data.filter(x=>x.prob>=60).length;
+        S('statDown').textContent=c.data.filter(x=>x.pb.level==='big').length;
+        renderTop(c.data); renderPull(c.data);
+        S('status').textContent='✓ 缓存数据 · '+new Date(c.t).toLocaleTimeString('zh-CN');
+        return;
+      }
+    }catch(e){}
+  }
   S('status').textContent='拉取实时行情…';
   try{
     const funds=await quotes();
-    S('status').textContent='行情OK '+funds.length+' 只，分析中（约5秒）…';
+    S('status').textContent='行情OK '+funds.length+'只，并行分析中…';
+    // 并行分批拉K线（每批12只），大幅提速
     const analyzed=[];
-    for(const f of funds){
-      try{
-        const c=await kline(f.code);
-        const p=predict(c),pb=predictPullback(c);
-        if(p&&pb)analyzed.push({...f,...p,pb});
-      }catch(e){}
+    const BATCH=12;
+    for(let i=0;i<funds.length;i+=BATCH){
+      const slice=funds.slice(i,i+BATCH);
+      const res=await Promise.all(slice.map(async f=>{
+        try{
+          const c=await kline(f.code);
+          const p=predict(c),pb=predictPullback(c);
+          if(p&&pb)return {...f,...p,pb};
+        }catch(e){}
+        return null;
+      }));
+      res.forEach(r=>{if(r)analyzed.push(r)});
+      S('status').textContent='分析中 '+analyzed.length+'/'+funds.length+'…';
     }
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({t:Date.now(),data:analyzed}))}catch(e){}
     S('statFunds').textContent=analyzed.length;
     S('statUp').textContent=analyzed.filter(x=>x.prob>=60).length;
     S('statDown').textContent=analyzed.filter(x=>x.pb.level==='big').length;
@@ -396,7 +420,7 @@ renderEmojiGrid();
 S('avatarFile').addEventListener('change',onAvatarFile);
 S('loginBtn').addEventListener('click',doLogin);
 S('logoutBtn').addEventListener('click',doLogout);
-S('recalcBtn').addEventListener('click',go);
+S('recalcBtn').addEventListener('click',()=>go(true));
 S('userInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 S('passInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 if(localStorage.getItem(AUTH_KEY))enterMain();
