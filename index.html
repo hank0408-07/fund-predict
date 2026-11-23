@@ -18,20 +18,25 @@ body{
 }
 
 
-/* 真实动漫图背景层 */
-.anime-photo{position:fixed;inset:0;z-index:0;pointer-events:none;
-  background-image:url('anime-bg.jpg');background-size:cover;background-position:center top;
-  background-attachment:fixed;opacity:.38;transition:opacity .5s}
+/* 真实动漫立绘：右侧固定，完整显示，适配手机和电脑 */
+.anime-photo{position:fixed;right:0;top:0;bottom:0;width:min(46vw,520px);z-index:0;pointer-events:none;
+  background-image:url('anime-bg.jpg');background-size:contain;background-repeat:no-repeat;
+  background-position:right bottom;opacity:.85;transition:opacity .4s,background-image .4s}
+/* 从左侧到右侧的渐变遮罩：左边深色保证文字可读，右边透出人物 */
 .anime-photo::after{content:"";position:absolute;inset:0;
-  background:linear-gradient(180deg,rgba(7,11,31,.55),rgba(7,11,31,.75))}
+  background:linear-gradient(90deg,#070b1f 0%,rgba(7,11,31,.85) 25%,rgba(7,11,31,.15) 75%,transparent 100%)}
+/* 手机窄屏：人物放背景、降低透明度，避免压住内容 */
+@media (max-width:600px){
+  .anime-photo{width:100vw;background-size:cover;background-position:center top;opacity:.32}
+  .anime-photo::after{background:linear-gradient(180deg,rgba(7,11,31,.35),rgba(7,11,31,.72))}
+}
 .bg-switch{position:fixed;bottom:14px;right:14px;z-index:20;
   width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);
   background:rgba(20,20,40,.6);backdrop-filter:blur(8px);color:#fff;font-size:18px;
   cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.4)}
 .bg-switch:hover{background:rgba(124,92,255,.6)}
 /* 动漫风动态背景 */
-.anime-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
-  background:linear-gradient(160deg,#1a0b2e 0%,#2d1b4e 35%,#0d1b3a 70%,#1a0b2e 100%)}
+.anime-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:transparent}
 .star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;opacity:.7;animation:twinkle 3s ease-in-out infinite}
 @keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1.4)}}
 .petals{position:absolute;inset:0}
@@ -39,9 +44,7 @@ body{
   background:linear-gradient(135deg,#ffb3d9,#ff6fa5);border-radius:14px 0 14px 0;
   animation:fall linear infinite}
 @keyframes fall{0%{transform:translateY(-30px) rotate(0deg);opacity:0}10%{opacity:.85}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
-.glow-girl{position:absolute;right:-40px;bottom:-20px;width:340px;height:340px;opacity:.28;
-  filter:blur(2px);animation:gfloat 8s ease-in-out infinite}
-@keyframes gfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
+
 /* 动态光球背景 */
 .orb{position:fixed;border-radius:50%;filter:blur(90px);opacity:.35;z-index:0;pointer-events:none}
 .orb.a{width:340px;height:340px;background:#7c5cff;top:-80px;left:-80px;animation:float1 14s ease-in-out infinite}
@@ -523,14 +526,7 @@ function buildAnimeBg(){
     petals+='<div class="petal" style="left:'+x+'%;width:'+sz+'px;height:'+sz+'px;animation-duration:'+dur+'s;animation-delay:'+delay+'s"></div>';
   }
   petals+='</div>';
-  // 动漫少女剪影（CSS绘制的柔和光晕人形轮廓）
-  const girl='<div class="glow-girl"><svg viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">'+
-    '<defs><radialGradient id="gg"><stop offset="0%" stop-color="#ffb3d9" stop-opacity=".9"/><stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/></radialGradient></defs>'+
-    '<ellipse cx="100" cy="90" rx="38" ry="44" fill="url(#gg)"/>'+
-    '<path d="M55 260 Q60 150 100 140 Q140 150 145 260 Z" fill="url(#gg)"/>'+
-    '<path d="M62 80 Q60 30 100 28 Q140 30 138 80 Q120 55 100 55 Q80 55 62 80 Z" fill="#ffb3d9" opacity=".5"/>'+
-    '</svg></div>';
-  bg.innerHTML=stars+petals+girl;
+  bg.innerHTML=stars+petals;
   document.body.insertBefore(bg,document.body.firstChild);
 }
 /* ===== 初始化 ===== */
