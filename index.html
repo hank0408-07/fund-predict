@@ -754,11 +754,11 @@ function renderRank(analyzed,type){
                      .sort((a,b)=>isUp?b.chg-a.chg:a.chg-b.chg).slice(0,20);
   let h='';
   list.forEach((f,i)=>{
-    const nick=NICK[f.code]||f.full;
+    const fullName=f.full||NICK[f.code]||f.code;
     const rk=i===0?'r1':i===1?'r2':i===2?'r3':'';
     const cls=f.chg>=0?'#ff5e7e':'#4dd4ac';
     h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*30)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
-      '<div class="info"><div class="fname">'+nick+(f.chg>4?'<span class="badge b-hot">猛涨</span>':'')+'</div>'+
+      '<div class="info"><div class="fname" style="font-size:13px">'+fullName+(f.chg>4?'<span class="badge b-hot">猛涨</span>':'')+'</div>'+
       '<div class="fdesc">'+f.code+' · 现价 '+Number(f.price).toFixed(3)+' · 下周概率 '+f.prob+'%</div></div>'+
       '<div class="probbox"><div class="prob" style="color:'+cls+'">'+(f.chg>=0?'+':'')+f.chg.toFixed(2)+'%</div>'+
       '<div class="plabel">今日'+(isUp?'涨幅':'跌幅')+'</div></div></div>';
