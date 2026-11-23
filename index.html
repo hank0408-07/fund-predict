@@ -16,6 +16,20 @@ body{
   font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
   background:var(--bg);color:var(--txt);padding:16px;position:relative;overflow-x:hidden;
 }
+
+/* 动漫风动态背景 */
+.anime-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  background:linear-gradient(160deg,#1a0b2e 0%,#2d1b4e 35%,#0d1b3a 70%,#1a0b2e 100%)}
+.star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;opacity:.7;animation:twinkle 3s ease-in-out infinite}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1.4)}}
+.petals{position:absolute;inset:0}
+.petal{position:absolute;top:-30px;width:14px;height:14px;opacity:.85;
+  background:linear-gradient(135deg,#ffb3d9,#ff6fa5);border-radius:14px 0 14px 0;
+  animation:fall linear infinite}
+@keyframes fall{0%{transform:translateY(-30px) rotate(0deg);opacity:0}10%{opacity:.85}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+.glow-girl{position:absolute;right:-40px;bottom:-20px;width:340px;height:340px;opacity:.28;
+  filter:blur(2px);animation:gfloat 8s ease-in-out infinite}
+@keyframes gfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
 /* 动态光球背景 */
 .orb{position:fixed;border-radius:50%;filter:blur(90px);opacity:.35;z-index:0;pointer-events:none}
 .orb.a{width:340px;height:340px;background:#7c5cff;top:-80px;left:-80px;animation:float1 14s ease-in-out infinite}
@@ -81,6 +95,8 @@ body::before{
 .primary-btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(255,94,156,.45)}
 .primary-btn:active{transform:translateY(0)}
 .err-msg{color:var(--hot);font-size:12px;min-height:18px;margin-top:8px}
+.forgot{font-size:12px;color:var(--blue);cursor:pointer;margin-top:10px;text-decoration:underline}
+.forgot:hover{color:#8ab4ff}
 .login-foot{color:#5a6478;font-size:10px;margin-top:14px;line-height:1.6}
 
 /* ============ 主界面 ============ */
@@ -116,6 +132,7 @@ body::before{
 .bar{height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:5px;overflow:hidden}
 .bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#ffb457,#ff5e7e)}
 .badge{display:inline-block;font-size:9px;padding:2px 7px;border-radius:8px;margin-left:5px;vertical-align:middle}
+.buy-hint{font-size:9px;color:#ffb457;margin-top:3px;line-height:1.3}
 .buy-tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:8px;margin-top:5px;display:inline-block}
 .buy-yes{color:#4dd4ac;background:rgba(77,212,172,.16)}
 .buy-no{color:#fff;background:linear-gradient(90deg,#ff4d6d,#c9184a);box-shadow:0 3px 12px rgba(255,77,109,.4);animation:pulse 2s ease-in-out infinite}
@@ -126,6 +143,7 @@ body::before{
 .pull-item:first-of-type{border-top:none}
 .pull-name{flex:1;min-width:0;font-size:14px;font-weight:600}
 .pull-code{font-size:10px;color:var(--mut);font-weight:400;margin-left:6px}
+.pull-range{font-size:11px;color:#8892b8;margin-right:8px;white-space:nowrap}
 .pull-tag{font-size:12px;font-weight:800;padding:7px 12px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .tag-big{color:#fff;background:linear-gradient(90deg,#ff4d6d,#c9184a);box-shadow:0 4px 16px rgba(255,77,109,.35)}
 .tag-small{color:#fff;background:linear-gradient(90deg,#3a86ff,#4361ee);box-shadow:0 4px 16px rgba(58,134,255,.3)}
@@ -163,6 +181,7 @@ body::before{
         <div class="field"><span class="ico">👤</span><input id="userInput" placeholder="账号（随意输入）" autocomplete="off"></div>
         <div class="field"><span class="ico">🔒</span><input id="passInput" type="password" autocomplete="new-password" spellcheck="false" placeholder="请输入密码"></div>
         <button class="primary-btn" id="loginBtn">进入系统 →</button>
+        <div class="forgot" id="forgotBtn">忘记密码？</div>
         <div class="err-msg" id="loginErr"></div>
         <div class="login-foot">数据实时更新 · 仅供研究参考</div>
       </div>
@@ -259,6 +278,7 @@ function onAvatarFile(e){
 }
 function doLogin(){
   const u=S('userInput').value.trim(),p=S('passInput').value.trim();
+  S('loginErr').style.color='';
   if(!avatar){S('loginErr').textContent='请先设置头像';return}
   if(!u){S('loginErr').textContent='请输入账号';return}
   if(p!=='070408'){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
@@ -437,12 +457,20 @@ function renderTop(analyzed){
     const hot=f.chg>2?'<span class="badge b-hot">今日涨'+pct(f.chg)+'</span>':'';
     const pc=f.prob>=65?'p-hi':f.prob>=55?'p-mi':'p-lo';
     const v=f.prob>=70?'下周很可能涨':f.prob>=60?'下周偏涨':f.prob>=50?'涨跌各半':'暂时观望';
-    const buy=(f.prob>=60&&f.chg<4)?'✓ 推荐今日买':'✕ 别买';
-    const bc=buy.indexOf('推荐')>=0?'buy-yes':'buy-no';
+    const canBuy=(f.prob>=60&&f.chg<4);
+    const buy=canBuy?'✓ 推荐今日买':'✕ 别买';
+    // 别买时注明何时可买
+    let buyHint='';
+    if(!canBuy){
+      if(f.chg>=4)buyHint='等回调到均线附近再买';
+      else if(f.prob<50)buyHint='等下周信号转强再买';
+      else buyHint='等确认突破再买';
+    }
+    const bc=canBuy?'buy-yes':'buy-no';
     h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+hot+'</div><div class="fdesc">'+f.full+' · 今日'+pct(f.chg)+' · 近5日'+pct(f.c5)+' · '+v+'</div></div>'+
       '<div class="probbox"><div class="prob '+pc+'">'+f.prob+'%</div><div class="plabel">下周看涨概率</div>'+
-      '<div class="buy-tag '+bc+'">'+buy+'</div>'+
+      '<div class="buy-tag '+bc+'">'+buy+'</div>'+(buyHint?'<div class="buy-hint">'+buyHint+'</div>':'')+
       '<div class="bar"><i style="width:'+f.prob+'%"></i></div></div></div>';
   });
   S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';
@@ -453,17 +481,51 @@ function renderPull(analyzed){
   pull.forEach((f,i)=>{
     const nick=NICK[f.code]||f.full;
     const big=f.pb.level==='big';
+    const risk=f.pb.risk||8;
+    const lo=(2+risk*0.15).toFixed(1);
+    const hi=(big?8+risk*0.35:5+risk*0.22).toFixed(1);
+    const range='-'+lo+'% ~ -'+hi+'%';
     h+='<div class="pull-item" style="animation-delay:'+(i*40)+'ms"><div class="rank">'+(i+1)+'</div>'+
       '<div class="pull-name">'+nick+'<span class="pull-code">'+f.code+'</span></div>'+
+      '<div class="pull-range">'+range+'</div>'+
       '<div class="pull-tag '+(big?'tag-big':'tag-small')+'">'+(big?'大概率大回调':'大概率小回调')+'</div></div>';
   });
   S('pullList').innerHTML=h||'<div class="load err">没有可用数据</div>';
 }
 
+
+/* ===== 动漫背景生成 ===== */
+function buildAnimeBg(){
+  if(document.querySelector('.anime-bg'))return;
+  const bg=document.createElement('div');bg.className='anime-bg';
+  let stars='';
+  for(let i=0;i<60;i++){
+    const x=Math.random()*100,y=Math.random()*100,d=(2+Math.random()*4).toFixed(1);
+    stars+='<div class="star" style="left:'+x+'%;top:'+y+'%;animation-delay:'+d+'s"></div>';
+  }
+  let petals='<div class="petals">';
+  for(let i=0;i<18;i++){
+    const x=Math.random()*100,dur=(8+Math.random()*8).toFixed(1),delay=(Math.random()*10).toFixed(1);
+    const sz=(8+Math.random()*10).toFixed(0);
+    petals+='<div class="petal" style="left:'+x+'%;width:'+sz+'px;height:'+sz+'px;animation-duration:'+dur+'s;animation-delay:'+delay+'s"></div>';
+  }
+  petals+='</div>';
+  // 动漫少女剪影（CSS绘制的柔和光晕人形轮廓）
+  const girl='<div class="glow-girl"><svg viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">'+
+    '<defs><radialGradient id="gg"><stop offset="0%" stop-color="#ffb3d9" stop-opacity=".9"/><stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/></radialGradient></defs>'+
+    '<ellipse cx="100" cy="90" rx="38" ry="44" fill="url(#gg)"/>'+
+    '<path d="M55 260 Q60 150 100 140 Q140 150 145 260 Z" fill="url(#gg)"/>'+
+    '<path d="M62 80 Q60 30 100 28 Q140 30 138 80 Q120 55 100 55 Q80 55 62 80 Z" fill="#ffb3d9" opacity=".5"/>'+
+    '</svg></div>';
+  bg.innerHTML=stars+petals+girl;
+  document.body.insertBefore(bg,document.body.firstChild);
+}
 /* ===== 初始化 ===== */
+buildAnimeBg();
 renderEmojiGrid();
 S('avatarFile').addEventListener('change',onAvatarFile);
 S('loginBtn').addEventListener('click',doLogin);
+S('forgotBtn').addEventListener('click',()=>{S('loginErr').style.color='#4dd4ac';S('loginErr').textContent='请联系 xhq 找回密码'});
 S('logoutBtn').addEventListener('click',doLogout);
 S('recalcBtn').addEventListener('click',()=>go(true));
 S('userInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
