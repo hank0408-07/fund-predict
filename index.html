@@ -156,6 +156,13 @@ body::before{
 .pull-name{flex:1;min-width:0;font-size:14px;font-weight:600}
 .pull-code{font-size:10px;color:var(--mut);font-weight:400;margin-left:6px}
 
+
+.tabbar{display:flex;padding:5px;margin-bottom:14px;position:sticky;top:0;z-index:15}
+.tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;font-weight:700;color:var(--mut);border-radius:12px;cursor:pointer;transition:.2s;white-space:nowrap}
+.tab:hover{color:var(--txt)}
+.tab.active{color:#fff;background:var(--acc);box-shadow:0 4px 16px rgba(124,92,255,.35)}
+.tab-panel{animation:fade .3s ease}
+.hidden{display:none}
 .watch-group{margin-bottom:12px}
 .watch-group:last-child{margin-bottom:0}
 .watch-gtitle{font-size:12px;font-weight:800;color:var(--warn);margin-bottom:6px;display:flex;align-items:center;gap:6px}
@@ -229,21 +236,41 @@ body::before{
     </div>
 
 
-    <div class="card glass watch-card">
-      <h2>👀 重点监视 · 黄金 & 银行</h2>
-      <div class="desc">每天帮你盯着黄金、银行，直接告诉你今天能不能买。</div>
-      <div id="watchList"><div class="load"><div class="spin"></div>正在监视板块…</div></div>
-    </div>
-    <div class="card glass">
-      <h2>🏆 下周最可能涨 TOP10</h2>
-      <div class="desc">拉每只基金最近一个月走势，算「势头」和「连续性」，动量越强下周延续上涨概率越高。</div>
-      <div id="list"><div class="load"><div class="spin"></div>正在分析 40 只热门基金…</div></div>
+    <!-- Tab 导航 -->
+    <div class="tabbar glass" id="tabbar">
+      <div class="tab active" data-tab="buy">✅ 今日推荐</div>
+      <div class="tab" data-tab="top">🏆 看涨榜</div>
+      <div class="tab" data-tab="pull">⚠️ 大概率回调</div>
+      <div class="tab" data-tab="watch">👀 黄金银行</div>
     </div>
 
-    <div class="card glass pull-card">
-      <h2>⚠️ 大概率回调</h2>
-      <div class="desc">这些最近涨得太急，下周可能回落，先别急着买，等跌下来再看。</div>
-      <div id="pullList"><div class="load"><div class="spin"></div>正在排查回调风险…</div></div>
+    <div class="tab-panel" id="panel-buy">
+      <div class="card glass">
+        <h2>✅ 今日推荐购买</h2>
+        <div class="desc">综合看涨概率、今日涨幅、回调风险筛出来的，今天可以下手的方向。</div>
+        <div id="buyList"><div class="load"><div class="spin"></div>正在挑选…</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-top">
+      <div class="card glass">
+        <h2>🏆 下周最可能涨 TOP10</h2>
+        <div class="desc">按势头和连续性排序，动量越强下周延续上涨的概率越高。</div>
+        <div id="list"><div class="load"><div class="spin"></div>正在分析…</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-pull">
+      <div class="card glass pull-card">
+        <h2>⚠️ 大概率回调</h2>
+        <div class="desc">这些涨得最急，下周可能回落，先别买，等跌下来再看。</div>
+        <div id="pullList"><div class="load"><div class="spin"></div>正在排查…</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-watch">
+      <div class="card glass watch-card">
+        <h2>👀 重点监视 · 黄金 & 银行</h2>
+        <div class="desc">每天帮你盯着黄金、银行，直接告诉你今天能不能买。</div>
+        <div id="watchList"><div class="load"><div class="spin"></div>正在监视…</div></div>
+      </div>
     </div>
 
     <button class="primary-btn" id="recalcBtn">🔄 再算一次</button>
@@ -395,13 +422,12 @@ function predictPullback(closes,code){
   return {level:risk>=22?'big':'small',risk:Math.round(risk)};
 }
 function markPullback(arr){
-  // 返回新数组，不污染原始数据
+  // 相对排名：取回调风险最高的前20%（至少5只），保证板块有内容
   const copy=arr.map(x=>({...x,pb:{...x.pb}}));
-  const realBig=copy.filter(x=>x.pb&&x.pb.level==='big'&&!x.pb.bond);
-  if(realBig.length<=8)return copy;
-  // 超过8个时只保留风险最高的8个
-  const keep=new Set(realBig.sort((a,b)=>b.pb.risk-a.pb.risk).slice(0,8).map(x=>x.code));
-  copy.forEach(x=>{if(x.pb.level==='big'&&!keep.has(x.code)&&!x.pb.bond)x.pb.level='small'});
+  copy.forEach(x=>{if(x.pb)x.pb.level='small'}); // 先重置
+  const cand=copy.filter(x=>x.pb&&!x.pb.bond).sort((a,b)=>b.pb.risk-a.pb.risk);
+  const n=Math.max(5,Math.ceil(cand.length*0.2));
+  cand.slice(0,n).forEach(x=>x.pb.level='big');
   return copy;
 }
 
@@ -413,7 +439,7 @@ async function go(force){
     S('statFunds').textContent=D.length;
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-    renderTop(D); renderPull(D); renderWatch(D);
+    renderBuy(D); renderTop(D); renderPull(D); renderWatch(D);
     S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显 · 正在同步实时数据…</span>';
     // 后台静默拉实时数据，不阻塞显示
     setTimeout(()=>fetchLive(false),100);
@@ -428,7 +454,7 @@ async function go(force){
         S('statFunds').textContent=D.length;
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-        renderTop(D); renderPull(D); renderWatch(D);
+        renderBuy(D); renderTop(D); renderPull(D); renderWatch(D);
         S('status').textContent='✓ 缓存数据 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
       }
@@ -463,6 +489,7 @@ async function fetchLive(showStatus){
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
     if(D.length){
+      renderBuy(D);
       renderTop(D);
       renderPull(D);
       renderWatch(D);
@@ -507,6 +534,20 @@ function renderTop(analyzed){
   S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';
 }
 
+function renderBuy(analyzed){
+  // 今日推荐：概率>=55、今日涨幅<4%、非大回调，按概率排序取前8
+  const rec=analyzed.filter(x=>x.prob>=55&&x.chg<4&&!(x.pb&&x.pb.level==='big')&&!(x.pb&&x.pb.bond))
+                    .sort((a,b)=>b.prob-a.prob).slice(0,8);
+  let h='';
+  rec.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    const chgCls=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
+    h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:#4dd4ac">推荐买</div><div class="plabel">下周概率 '+f.prob+'%</div></div></div>';
+  });
+  S('buyList').innerHTML=h||'<div class="load" style="color:#8892b8">今天没有特别合适的，建议观望</div>';
+}
 function renderWatch(analyzed){
   let h='';
   for(const [name,codes] of Object.entries(WATCH)){
@@ -577,6 +618,16 @@ function buildAnimeBg(){
     }
   });
 })();
+/* ===== Tab 切换 ===== */
+document.querySelectorAll('#tabbar .tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('#tabbar .tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(x=>x.classList.add('hidden'));
+    t.classList.add('active');
+    const p=document.getElementById('panel-'+t.dataset.tab);
+    if(p)p.classList.remove('hidden');
+  });
+});
 /* ===== 初始化 ===== */
 buildAnimeBg();
 let bgIdx=0;
