@@ -296,17 +296,23 @@ async function kline(code){
   const eps=[
     'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=',
     'https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=',
-    'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=',
-    'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='
+    'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param='
   ];
-  for(const b of eps){
+  // 三个端点同时竞速，谁先返回有效数据用谁，单请求3秒超时
+  const jobs=eps.map(b=>(async()=>{
+    const ctl=new AbortController();
+    const timer=setTimeout(()=>ctl.abort(),3000);
     try{
-      const r=await fetch(b+code+',day,,,21,qfq',{cache:'no-store'});
-      if(!r.ok)continue;
+      const r=await fetch(b+code+',day,,,21,qfq',{cache:'no-store',signal:ctl.signal});
+      if(!r.ok)return null;
       const j=await r.json(),node=j.data&&j.data[code];
       const d=(node&&(node.qfqday||node.day))||[];
       if(d.length>=15)return d.map(k=>parseFloat(k[2]));
-    }catch(e){}
+    }catch(e){}finally{clearTimeout(timer)}
+    return null;
+  })());
+  for(const job of jobs){
+    try{const r=await job;if(r)return r}catch(e){}
   }
   return [];
 }
@@ -341,13 +347,15 @@ function predictPullback(closes){
 
 /* ===== 主分析 ===== */
 async function go(force){
-  // 内置快照：打开立即显示，零等待
+  // 内置快照：先秒显，零等待
   if(!force && SNAPSHOT && SNAPSHOT.data && SNAPSHOT.data.length){
     S('statFunds').textContent=SNAPSHOT.data.length;
     S('statUp').textContent=SNAPSHOT.data.filter(x=>x.prob>=60).length;
     S('statDown').textContent=SNAPSHOT.data.filter(x=>x.pb.level==='big').length;
     renderTop(SNAPSHOT.data); renderPull(SNAPSHOT.data);
-    S('status').textContent='✓ 数据更新于 '+new Date(SNAPSHOT.t).toLocaleString('zh-CN')+' · 点「再算一次」刷新实时数据';
+    S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显 · 正在同步实时数据…</span>';
+    // 后台静默拉实时数据，不阻塞显示
+    setTimeout(()=>fetchLive(false),100);
     return;
   }
   // 缓存兜底
@@ -364,10 +372,13 @@ async function go(force){
       }
     }catch(e){}
   }
-  S('status').textContent='拉取实时行情…';
+  return fetchLive(true);
+}
+async function fetchLive(showStatus){
   try{
+    if(showStatus)S('status').textContent='拉取实时行情…';
     const funds=await quotes();
-    S('status').textContent='行情OK '+funds.length+'只，并行分析中…';
+    if(showStatus)S('status').textContent='行情OK '+funds.length+'只，并行分析中…';
     // 并行分批拉K线（每批12只），大幅提速
     const analyzed=[];
     const BATCH=12;
@@ -382,7 +393,7 @@ async function go(force){
         return null;
       }));
       res.forEach(r=>{if(r)analyzed.push(r)});
-      S('status').textContent='分析中 '+analyzed.length+'/'+funds.length+'…';
+      if(showStatus)S('status').textContent='分析中 '+analyzed.length+'/'+funds.length+'…';
     }
     try{localStorage.setItem(CACHE_KEY,JSON.stringify({t:Date.now(),data:analyzed}))}catch(e){}
     S('statFunds').textContent=analyzed.length;
@@ -390,12 +401,13 @@ async function go(force){
     S('statDown').textContent=analyzed.filter(x=>x.pb.level==='big').length;
     renderTop(analyzed);
     renderPull(analyzed);
-    S('status').textContent='✓ 完成 · '+new Date().toLocaleTimeString('zh-CN');
+    S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
   }catch(e){
-    S('status').innerHTML='<span class="err">错误: '+e.message+'</span>';
-    S('list').innerHTML='<div class="load err">'+e.message+'</div>';
+    S('status').innerHTML='<span class="err">实时同步失败，显示缓存 · '+e.message+'</span>';
   }
 }
+// 每5分钟后台静默刷新一次实时数据
+setInterval(()=>{if(!S('mainView').classList.contains('hidden'))fetchLive(false)},5*60*1000);
 function renderTop(analyzed){
   const top=[...analyzed].sort((a,b)=>b.prob-a.prob).slice(0,10);
   let h='';
