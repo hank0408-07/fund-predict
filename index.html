@@ -291,12 +291,15 @@ function onAvatarFile(e){
   };
   img.src=url;
 }
+// 口令校验（哈希比对，源码不含明文）
+function hp(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0;return h.toString(16)}
+const PWD_HASH=0x7bd51c78.toString(16);
 function doLogin(){
   const u=S('userInput').value.trim(),p=S('passInput').value.trim();
   S('loginErr').style.color='';
   if(!avatar){S('loginErr').textContent='请先设置头像';return}
   if(!u){S('loginErr').textContent='请输入账号';return}
-  if(p!=='070408'){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
+  if(hp(p)!==PWD_HASH){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
   S('loginErr').textContent='';
   localStorage.setItem(AUTH_KEY,JSON.stringify({user:u,avatar:avatar}));
   enterMain();
@@ -525,6 +528,18 @@ function buildAnimeBg(){
   bg.innerHTML=stars+petals;
   document.body.insertBefore(bg,document.body.firstChild);
 }
+/* ===== 访问保护 ===== */
+(function(){
+  // 禁止右键菜单
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  // 禁止常用开发者快捷键 / 查看源码
+  document.addEventListener('keydown',e=>{
+    const k=e.key;
+    if(k==='F12'||(e.ctrlKey&&e.shiftKey&&(k==='I'||k==='J'||k==='C'))||(e.ctrlKey&&k==='U')){
+      e.preventDefault();e.stopPropagation();
+    }
+  });
+})();
 /* ===== 初始化 ===== */
 buildAnimeBg();
 let bgIdx=0;
