@@ -231,7 +231,7 @@ body::before{
 
     <div class="card glass watch-card">
       <h2>👀 重点监视 · 黄金 & 银行</h2>
-      <div class="desc">实时盯盘黄金、银行两大板块，看涨概率与今日涨跌一目了然。</div>
+      <div class="desc">每天帮你盯着黄金、银行，直接告诉你今天能不能买。</div>
       <div id="watchList"><div class="load"><div class="spin"></div>正在监视板块…</div></div>
     </div>
     <div class="card glass">
@@ -267,7 +267,7 @@ const NICK={
   "sz159649":"化工","sh517080":"地产","sz159822":"化工龙头","sh515220":"煤炭",
   "sz159551":"机器人产业链","sh560580":"并购重组","sz159587":"化工新材料","sh517390":"港股中概",
   "sz159557":"港股医疗","sh561760":"央视50","sz159579":"半导体设备2","sh513980":"石油天然气",
-  "sh518880":"黄金ETF","sz159934":"黄金易方达","sh517400":"黄金股","sh512800":"银行ETF","sh515290":"银行天弘","sh516210":"银行华安"
+  "sh518880":"黄金①","sz159934":"黄金②","sh517400":"黄金股","sh512800":"银行①","sh515290":"银行②","sh516210":"银行③"
 };
 // 重点监视板块
 const WATCH={"黄金":["sh518880","sz159934","sh517400"],"银行":["sh512800","sh515290","sh516210"]};
@@ -508,11 +508,11 @@ function renderWatch(analyzed){
       const f=analyzed.find(x=>x.code===code);
       if(!f){h+='<div class="watch-row"><span class="watch-nick">'+(NICK[code]||code)+'</span><span class="watch-chg" style="color:#8892b8">--</span></div>';continue}
       const chgCls=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
-      const pcls=f.prob>=60?'buy-yes':f.prob>=50?'tag-small':'buy-no';
-      const pred=f.prob>=60?'看涨':f.prob>=50?'中性':'偏弱';
+      const buy=f.prob>=60&&f.chg<4;
+      const bc=buy?'buy-yes':'buy-no';
       h+='<div class="watch-row"><span class="watch-nick">'+NICK[code]+'</span>'+
         '<span class="watch-chg" style="'+chgCls+'">'+pct(f.chg)+'</span>'+
-        '<span class="watch-prob '+pcls+'" title="下周'+pred+'">'+pred+' '+f.prob+'%</span></div>';
+        '<span class="watch-prob '+bc+'">'+(buy?'推荐买':'别买')+'</span></div>';
     }
     h+='</div>';
   }
