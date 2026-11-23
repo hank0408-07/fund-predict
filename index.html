@@ -157,8 +157,8 @@ body::before{
 .pull-code{font-size:10px;color:var(--mut);font-weight:400;margin-left:6px}
 
 
-.tabbar{display:flex;padding:5px;margin-bottom:14px;position:sticky;top:0;z-index:15}
-.tab{flex:1;text-align:center;padding:10px 2px;font-size:11px;font-weight:700;color:var(--mut);border-radius:12px;cursor:pointer;transition:.2s;white-space:nowrap}
+.tabbar{display:flex;flex-wrap:wrap;padding:5px;margin-bottom:14px;position:sticky;top:0;z-index:15;gap:4px}
+.tab{flex:1;min-width:70px;text-align:center;padding:9px 2px;font-size:11px;font-weight:700;color:var(--mut);border-radius:12px;cursor:pointer;transition:.2s;white-space:nowrap}
 .tab:hover{color:var(--txt)}
 .tab.active{color:#fff;background:var(--acc);box-shadow:0 4px 16px rgba(124,92,255,.35)}
 .tab-panel{animation:fade .3s ease}
@@ -182,6 +182,28 @@ body::before{
 .err{color:var(--hot)}
 .foot{text-align:center;color:#5a6478;font-size:10px;margin-top:18px;line-height:1.7}
 .hidden{display:none}
+/* 弹层 */
+.modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.modal-box{width:100%;max-width:620px;padding:20px;max-height:90vh;overflow:auto}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.modal-head h3{font-size:18px}
+.modal-close{cursor:pointer;font-size:20px;color:var(--mut)}
+.modal-close:hover{color:var(--hot)}
+.modal-meta{font-size:12px;color:var(--mut);margin-bottom:10px}
+.chart-canvas{width:100%;height:auto;background:rgba(0,0,0,.2);border-radius:12px}
+.chart-legend{text-align:center;font-size:10px;color:var(--mut);margin-top:8px}
+.hold-form{display:flex;flex-direction:column;gap:8px}
+.hold-form label{font-size:12px;color:var(--mut);margin-top:6px}
+.hold-form input{padding:12px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);font-size:14px;outline:none}
+.hold-form input:focus{border-color:#7c5cff}
+.hold-item{display:flex;align-items:center;gap:10px;padding:12px 4px;border-top:1px solid rgba(255,255,255,.07)}
+.hold-item:first-child{border-top:none}
+.hold-info{flex:1}
+.hold-name{font-size:14px;font-weight:700}
+.hold-sub{font-size:10px;color:var(--mut);margin-top:2px}
+.hold-del{color:var(--hot);cursor:pointer;font-size:12px;padding:4px 8px}
+.hold-summary{margin-top:14px;padding:14px;border-radius:12px;background:rgba(255,255,255,.05);text-align:center;font-size:14px}
+
 </style>
 </head>
 <body>
@@ -241,6 +263,8 @@ body::before{
       <div class="tab" data-tab="top">🏆 看涨</div>
       <div class="tab" data-tab="pull">⚠️ 回调</div>
       <div class="tab" data-tab="fix">💚 修复</div>
+      <div class="tab" data-tab="fav">⭐ 自选</div>
+      <div class="tab" data-tab="hold">💰 持仓</div>
       <div class="tab" data-tab="watch">👀 黄金</div>
     </div>
 
@@ -272,6 +296,22 @@ body::before{
         <div id="fixList"><div class="load"><div class="spin"></div>正在寻找超跌机会…</div></div>
       </div>
     </div>
+    <div class="tab-panel hidden" id="panel-fav">
+      <div class="card glass">
+        <h2>⭐ 我的自选</h2>
+        <div class="desc">在任意基金上长按即可加入自选，保存在本机不会丢。</div>
+        <div id="favList"><div class="load">还没有自选基金，去别的板块长按添加</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-hold">
+      <div class="card glass">
+        <h2>💰 我的持仓</h2>
+        <div class="desc">在任意基金上点「记持仓」，填入买入价和份额，自动算盈亏。</div>
+        <button class="primary-btn" id="addHoldBtn" style="margin-bottom:12px">+ 添加持仓</button>
+        <div id="holdList"><div class="load">还没有持仓记录</div></div>
+        <div class="hold-summary" id="holdSummary"></div>
+      </div>
+    </div>
     <div class="tab-panel hidden" id="panel-watch">
       <div class="card glass watch-card">
         <h2>👀 重点监视 · 黄金</h2>
@@ -286,6 +326,29 @@ body::before{
       仅供研究参考，不构成投资建议 · 基金有风险，投资需谨慎
     </div>
   </div>
+
+<!-- 走势图弹层 -->
+<div id="chartModal" class="modal hidden">
+  <div class="modal-box glass">
+    <div class="modal-head"><h3 id="chartTitle">净值走势</h3><span id="chartClose" class="modal-close">✕</span></div>
+    <div class="modal-meta" id="chartMeta"></div>
+    <canvas id="chartCanvas" width="700" height="300" class="chart-canvas"></canvas>
+    <div class="chart-legend">近21个交易日 · 前复权收盘价</div>
+  </div>
+</div>
+<!-- 持仓输入弹层 -->
+<div id="holdModal" class="modal hidden">
+  <div class="modal-box glass">
+    <div class="modal-head"><h3>记一笔持仓</h3><span id="holdClose" class="modal-close">✕</span></div>
+    <div class="hold-form">
+      <label>基金</label><input id="holdCode" placeholder="基金代码，如 sh518880">
+      <label>买入价</label><input id="holdPrice" type="number" step="0.001" placeholder="买入时的净值">
+      <label>份额/金额</label><input id="holdQty" type="number" step="0.01" placeholder="持有份额">
+      <button class="primary-btn" id="holdSave">保存</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -445,7 +508,7 @@ async function go(force){
     S('statFunds').textContent=D.length;
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-    renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D);
+    ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderFav(); renderHold();
     S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显 · 正在同步实时数据…</span>';
     // 后台静默拉实时数据，不阻塞显示
     setTimeout(()=>fetchLive(false),100);
@@ -460,7 +523,7 @@ async function go(force){
         S('statFunds').textContent=D.length;
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-        renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D);
+        ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderFav(); renderHold();
         S('status').textContent='✓ 缓存数据 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
       }
@@ -495,11 +558,13 @@ async function fetchLive(showStatus){
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
     if(D.length){
+      ALL_DATA=D;
       renderBuy(D);
       renderTop(D);
       renderPull(D);
       renderFix(D);
       renderWatch(D);
+      renderFav(); renderHold();
       S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
     }else{
       // 实时没拿到数据，保留当前快照显示
@@ -532,13 +597,13 @@ function renderTop(analyzed){
       else buyHint='再观望一下';
     }
     const bc=canBuy?'buy-yes':'buy-no';
-    h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+hot+'</div><div class="fdesc">'+f.full+' · 今日'+pct(f.chg)+' · 近5日'+pct(f.c5)+' · '+v+'</div></div>'+
       '<div class="probbox"><div class="prob '+pc+'">'+f.prob+'%</div><div class="plabel">下周看涨概率</div>'+
       '<div class="buy-tag '+bc+'">'+buy+'</div>'+(buyHint?'<div class="buy-hint">'+buyHint+'</div>':'')+
       '<div class="bar"><i style="width:'+f.prob+'%"></i></div></div></div>';
   });
-  S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';
+  S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';bindItemEvents('list');
 }
 
 function renderFix(analyzed){
@@ -547,11 +612,11 @@ function renderFix(analyzed){
   let h='';
   fix.forEach((f,i)=>{
     const nick=NICK[f.code]||f.full;
-    h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
       '<div class="probbox"><div class="prob" style="color:#5b9dff">修复中</div><div class="plabel">近5日 '+f.c5.toFixed(1)+'%</div></div></div>';
   });
-  S('fixList').innerHTML=h||'<div class="load" style="color:#8892b8">最近没有明显超跌的，暂时没啥好修复的</div>';
+  S('fixList').innerHTML=h||'<div class="load" style="color:#8892b8">最近没有明显超跌的，暂时没啥好修复的</div>';bindItemEvents('fixList');
 }
 function renderBuy(analyzed){
   // 今日推荐：概率>=55、今日涨幅<4%、非大回调，按概率排序取前8
@@ -561,11 +626,11 @@ function renderBuy(analyzed){
   rec.forEach((f,i)=>{
     const nick=NICK[f.code]||f.full;
     const chgCls=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
-    h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
       '<div class="probbox"><div class="prob" style="color:#4dd4ac">推荐买</div><div class="plabel">下周概率 '+f.prob+'%</div></div></div>';
   });
-  S('buyList').innerHTML=h||'<div class="load" style="color:#8892b8">今天没有特别合适的，建议观望</div>';
+  S('buyList').innerHTML=h||'<div class="load" style="color:#8892b8">今天没有特别合适的，建议观望</div>';bindItemEvents('buyList');
 }
 function renderWatch(analyzed){
   let h='';
@@ -579,13 +644,13 @@ function renderWatch(analyzed){
       const bigPull=f.pb&&f.pb.level==='big';
       const buy=f.prob>=60&&f.chg<4&&!bigPull;
       const bc=buy?'buy-yes':'buy-no';
-      h+='<div class="watch-row"><span class="watch-nick">'+NICK[code]+'</span>'+
+      h+='<div class="watch-row" data-code="'+code+'"><span class="watch-nick">'+NICK[code]+'</span>'+
         '<span class="watch-chg" style="'+chgCls+'">'+pct(f.chg)+'</span>'+
         '<span class="watch-prob '+bc+'">'+(buy?'推荐买':'别买')+'</span></div>';
     }
     h+='</div>';
   }
-  S('watchList').innerHTML=h;
+  S('watchList').innerHTML=h;bindItemEvents('watchList');
 }
 function renderPull(analyzed){
   // 只显示大回调的，按风险排序
@@ -596,12 +661,12 @@ function renderPull(analyzed){
     const risk=f.pb.risk||16;
     const lo=(3+risk*0.15).toFixed(1);
     const hi=(8+risk*0.35).toFixed(1);
-    h+='<div class="pull-item" style="animation-delay:'+(i*40)+'ms"><div class="rank">'+(i+1)+'</div>'+
+    h+='<div class="pull-item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank">'+(i+1)+'</div>'+
       '<div class="pull-name">'+nick+'<span class="pull-code">'+f.code+'</span></div>'+
       '<div class="pull-range">预计跌 '+lo+'% ~ '+hi+'%</div>'+
       '<div class="pull-tag tag-big">大概率回调</div></div>';
   });
-  S('pullList').innerHTML=h||'<div class="load" style="color:#4dd4ac">✓ 目前没有明显回调风险，暂时安全</div>';
+  S('pullList').innerHTML=h||'<div class="load" style="color:#4dd4ac">✓ 目前没有明显回调风险，暂时安全</div>';bindItemEvents('pullList');
 }
 
 
@@ -625,6 +690,119 @@ function buildAnimeBg(){
   bg.innerHTML=stars+petals;
   document.body.insertBefore(bg,document.body.firstChild);
 }
+
+/* ===== 走势图 / 自选 / 持仓 ===== */
+const FAV_KEY='FUND_FAV', HOLD_KEY='FUND_HOLD';
+const getLS=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||'null')||d}catch(e){return d}};
+const setLS=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+
+// 打开走势图弹层
+async function openChart(code,nick){
+  const m=S('chartModal');m.classList.remove('hidden');
+  S('chartTitle').textContent=(nick||code)+' · 净值走势';
+  S('chartMeta').textContent='正在加载 '+code+' 近21日走势…';
+  const closes=await kline(code);
+  drawChart(closes);
+}
+function drawChart(closes){
+  const cv=S('chartCanvas'),ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  if(!closes||closes.length<2){S('chartMeta').textContent='暂无走势数据';return}
+  const min=Math.min(...closes),max=Math.max(...closes),range=(max-min)||1;
+  const pad=30;
+  // 网格
+  ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=pad+(H-2*pad)*i/4;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke()}
+  // 渐变填充
+  const pts=closes.map((v,i)=>[pad+(W-2*pad)*i/(closes.length-1), pad+(H-2*pad)*(1-(v-min)/range)]);
+  const grad=ctx.createLinearGradient(0,pad,0,H-pad);
+  grad.addColorStop(0,'rgba(124,92,255,.35)');grad.addColorStop(1,'rgba(124,92,255,0)');
+  ctx.beginPath();ctx.moveTo(pts[0][0],H-pad);pts.forEach(pt=>ctx.lineTo(pt[0],pt[1]));ctx.lineTo(pts[pts.length-1][0],H-pad);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  // 折线
+  ctx.beginPath();pts.forEach((pt,i)=>i?ctx.lineTo(pt[0],pt[1]):ctx.moveTo(pt[0],pt[1]));
+  ctx.strokeStyle='#a78bfa';ctx.lineWidth=2.5;ctx.stroke();
+  // 首尾标注
+  const first=closes[0],last=closes[closes.length-1],chg=(last/first-1)*100;
+  ctx.fillStyle=chg>=0?'#ff5e7e':'#4dd4ac';ctx.font='bold 14px sans-serif';
+  ctx.fillText('起 '+first.toFixed(3),pad,20);
+  ctx.textAlign='right';ctx.fillText('现 '+last.toFixed(3)+' ('+(chg>=0?'+':'')+chg.toFixed(1)+'%)',W-pad,20);
+  S('chartMeta').textContent='最新 '+last.toFixed(3)+' · 区间 '+chg.toFixed(1)+'% · 最低'+min.toFixed(3)+' 最高'+max.toFixed(3);
+}
+
+// 自选
+function renderFav(){
+  const fav=getLS(FAV_KEY,[]);
+  if(!fav.length){S('favList').innerHTML='<div class="fav-empty">还没有自选基金<br>在任意基金上长按即可加入</div>';return}
+  let h='';
+  fav.forEach((f,i)=>{
+    const now=ALL_DATA.find(x=>x.code===f.code);
+    const price=now?now.price:f.price;
+    const chg=now?now.chg:f.chg;
+    const chgCls=chg>0?'color:#ff5e7e':chg<0?'color:#4dd4ac':'color:#8892b8';
+    h+='<div class="item" data-code="'+f.code+'"><div class="info"><div class="fname">'+(f.nick||f.code)+'</div>'+
+      '<div class="fdesc">'+f.code+' · 点看走势</div></div>'+
+      '<div class="probbox"><div class="prob" style="font-size:15px;'+chgCls+'">'+Number(price).toFixed(3)+'</div>'+
+      '<div class="plabel" style="'+chgCls+'">'+pct(chg)+'</div>'+
+      '<span class="hold-del" data-delfav="'+f.code+'">移除</span></div></div>';
+  });
+  S('favList').innerHTML=h;
+}
+function toggleFav(code,nick){
+  let fav=getLS(FAV_KEY,[]);
+  if(fav.some(x=>x.code===code)){uniToast('已在自选');return}
+  const f=ALL_DATA.find(x=>x.code===code)||{};
+  fav.push({code,nick:nick||f.nick||code,price:f.price||0,chg:f.chg||0});
+  setLS(FAV_KEY,fav);uniToast('已加入自选 ⭐');renderFav();
+}
+function uniToast(msg){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(20,20,40,.95);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;transition:.3s';document.body.appendChild(t)}
+  t.textContent=msg;t.style.opacity='1';clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',1500);
+}
+
+// 持仓
+function renderHold(){
+  const holds=getLS(HOLD_KEY,[]);
+  if(!holds.length){S('holdList').innerHTML='<div class="fav-empty">还没有持仓记录<br>点上方按钮添加</div>';S('holdSummary').innerHTML='';return}
+  let h='',totalCost=0,totalVal=0;
+  holds.forEach((x,i)=>{
+    const now=ALL_DATA.find(y=>y.code===x.code);
+    const price=now?now.price:x.price;
+    const val=price*x.qty,cost=x.price*x.qty,pl=val-cost,plpct=cost?(pl/cost*100):0;
+    totalCost+=cost;totalVal+=val;
+    const plCls=pl>=0?'color:#ff5e7e':'color:#4dd4ac';
+    h+='<div class="hold-item"><div class="hold-info"><div class="hold-name">'+(x.nick||x.code)+'</div>'+
+      '<div class="hold-sub">成本'+x.price.toFixed(3)+' × '+x.qty+' = ¥'+cost.toFixed(0)+'</div></div>'+
+      '<div style="text-align:right"><div style="font-size:13px;font-weight:700;'+plCls+'">'+(pl>=0?'+':'')+'¥'+pl.toFixed(0)+'</div>'+
+      '<div class="hold-sub" style="'+plCls+'">'+(plpct>=0?'+':'')+plpct.toFixed(1)+'%</div></div>'+
+      '<span class="hold-del" data-delhold="'+i+'">✕</span></div>';
+  });
+  S('holdList').innerHTML=h;
+  const tp=totalVal-totalCost,tpp=costPct(totalCost,totalVal);
+  S('holdSummary').innerHTML='总投入 ¥'+totalCost.toFixed(0)+' · 现值 ¥'+totalVal.toFixed(0)+
+    ' · <span style="color:'+(tp>=0?'#ff5e7e':'#4dd4ac')+'">总盈亏 '+(tp>=0?'+':'')+'¥'+tp.toFixed(0)+' ('+(tpp>=0?'+':'')+tpp.toFixed(1)+'%)</span>';
+}
+function costPct(c,v){return c?((v-c)/c*100):0}
+
+// 全局数据（渲染时保存，供走势/自选/持仓用）
+let ALL_DATA=[];
+function bindItemEvents(containerId){
+  const box=S(containerId);if(!box)return;
+  box.querySelectorAll('.item,.hold-item,.pull-item').forEach(el=>{
+    const code=el.dataset.code;if(!code)return;
+    el.onclick=(e)=>{
+      if(e.target.dataset.delfav||e.target.dataset.delhold)return;
+      const nm=el.querySelector('.fname,.pull-name,.hold-name');
+      openChart(code,nm?nm.textContent:code);
+    };
+    let timer=null;
+    el.oncontextmenu=(e)=>{e.preventDefault();toggleFav(code)};
+    el.addEventListener('touchstart',()=>{timer=setTimeout(()=>toggleFav(code),600)},{passive:true});
+    el.addEventListener('touchend',()=>clearTimeout(timer));
+    el.addEventListener('touchmove',()=>clearTimeout(timer));
+  });
+}
+
 /* ===== 访问保护 ===== */
 (function(){
   // 禁止右键菜单
@@ -647,6 +825,30 @@ document.querySelectorAll('#tabbar .tab').forEach(t=>{
     if(p)p.classList.remove('hidden');
   });
 });
+/* ===== 弹层/持仓事件 ===== */
+S('chartClose').onclick=()=>S('chartModal').classList.add('hidden');
+S('chartModal').onclick=(e)=>{if(e.target.id==='chartModal')S('chartModal').classList.add('hidden')};
+S('holdClose').onclick=()=>S('holdModal').classList.add('hidden');
+S('holdModal').onclick=(e)=>{if(e.target.id==='holdModal')S('holdModal').classList.add('hidden')};
+S('addHoldBtn').onclick=()=>{S('holdCode').value='';S('holdPrice').value='';S('holdQty').value='';S('holdModal').classList.remove('hidden')};
+S('holdSave').onclick=()=>{
+  const code=S('holdCode').value.trim(),price=parseFloat(S('holdPrice').value),qty=parseFloat(S('holdQty').value);
+  if(!code||!price||!qty){uniToast('请填完整');return}
+  const holds=getLS(HOLD_KEY,[]);
+  const f=ALL_DATA.find(x=>x.code===code)||{};
+  holds.push({code,nick:NICK[code]||f.nick||code,price,qty});
+  setLS(HOLD_KEY,holds);S('holdModal').classList.add('hidden');renderHold();uniToast('已记录持仓 💰');
+};
+// 自选移除、持仓删除（事件委托）
+S('favList').onclick=(e)=>{
+  const d=e.target.dataset.delfav;
+  if(d){e.stopPropagation();const fav=getLS(FAV_KEY,[]).filter(x=>x.code!==d);setLS(FAV_KEY,fav);renderFav();uniToast('已移除')}
+};
+S('holdList').onclick=(e)=>{
+  const d=e.target.dataset.delhold;
+  if(d!==undefined){e.stopPropagation();const holds=getLS(HOLD_KEY,[]);holds.splice(Number(d),1);setLS(HOLD_KEY,holds);renderHold()}
+};
+
 /* ===== 初始化 ===== */
 buildAnimeBg();
 let bgIdx=0;
