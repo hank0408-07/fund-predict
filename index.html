@@ -158,7 +158,7 @@ body::before{
 
 
 .tabbar{display:flex;padding:5px;margin-bottom:14px;position:sticky;top:0;z-index:15}
-.tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;font-weight:700;color:var(--mut);border-radius:12px;cursor:pointer;transition:.2s;white-space:nowrap}
+.tab{flex:1;text-align:center;padding:10px 2px;font-size:11px;font-weight:700;color:var(--mut);border-radius:12px;cursor:pointer;transition:.2s;white-space:nowrap}
 .tab:hover{color:var(--txt)}
 .tab.active{color:#fff;background:var(--acc);box-shadow:0 4px 16px rgba(124,92,255,.35)}
 .tab-panel{animation:fade .3s ease}
@@ -205,7 +205,6 @@ body::before{
         </div>
         <label class="upload-btn" style="display:block;margin:6px 0 16px">📷 点击上传头像<input type="file" id="avatarFile" accept="image/*"></label>
 
-        <div class="field"><span class="ico">👤</span><input id="userInput" placeholder="账号（随意输入）" autocomplete="off"></div>
         <div class="field"><span class="ico">🔒</span><input id="passInput" type="password" autocomplete="new-password" spellcheck="false" placeholder="请输入密码"></div>
         <button class="primary-btn" id="loginBtn">进入系统 →</button>
         <div class="forgot" id="forgotBtn">忘记密码？</div>
@@ -238,10 +237,11 @@ body::before{
 
     <!-- Tab 导航 -->
     <div class="tabbar glass" id="tabbar">
-      <div class="tab active" data-tab="buy">✅ 今日推荐</div>
-      <div class="tab" data-tab="top">🏆 看涨榜</div>
-      <div class="tab" data-tab="pull">⚠️ 大概率回调</div>
-      <div class="tab" data-tab="watch">👀 黄金银行</div>
+      <div class="tab active" data-tab="buy">✅ 推荐</div>
+      <div class="tab" data-tab="top">🏆 看涨</div>
+      <div class="tab" data-tab="pull">⚠️ 回调</div>
+      <div class="tab" data-tab="fix">💚 修复</div>
+      <div class="tab" data-tab="watch">👀 黄金</div>
     </div>
 
     <div class="tab-panel" id="panel-buy">
@@ -265,15 +265,22 @@ body::before{
         <div id="pullList"><div class="load"><div class="spin"></div>正在排查…</div></div>
       </div>
     </div>
+    <div class="tab-panel hidden" id="panel-fix">
+      <div class="card glass">
+        <h2>💚 大概率修复</h2>
+        <div class="desc">这些最近跌得比较多，可能反弹修复，适合低吸关注。</div>
+        <div id="fixList"><div class="load"><div class="spin"></div>正在寻找超跌机会…</div></div>
+      </div>
+    </div>
     <div class="tab-panel hidden" id="panel-watch">
       <div class="card glass watch-card">
-        <h2>👀 重点监视 · 黄金 & 银行</h2>
-        <div class="desc">每天帮你盯着黄金、银行，直接告诉你今天能不能买。</div>
+        <h2>👀 重点监视 · 黄金</h2>
+        <div class="desc">每天帮你盯着黄金，直接告诉你今天能不能买。</div>
         <div id="watchList"><div class="load"><div class="spin"></div>正在监视…</div></div>
       </div>
     </div>
 
-    <button class="primary-btn" id="recalcBtn">🔄 再算一次</button>
+    <button class="primary-btn" id="recalcBtn">🔄 刷新一下</button>
     <div class="foot">
       数据：腾讯财经实时行情 + 21日历史走势 · 模型：动量回归 × 连续性 × 回调风险<br>
       仅供研究参考，不构成投资建议 · 基金有风险，投资需谨慎
@@ -297,7 +304,7 @@ const NICK={
   "sh518880":"黄金①","sz159934":"黄金②","sh517400":"黄金股","sh512800":"银行①","sh515290":"银行②","sh516210":"银行③"
 };
 // 重点监视板块
-const WATCH={"黄金":["sh518880"],"银行":["sh512800"]};
+const WATCH={"黄金":["sh518880"]};
 const CODES=Object.keys(NICK);
 const pct=v=>(v>0?'+':'')+v.toFixed(2)+'%';
 function dec(buf){for(const e of ['gbk','gb18030','utf-8']){try{return new TextDecoder(e).decode(buf)}catch(x){}}return ''}
@@ -329,10 +336,9 @@ function onAvatarFile(e){
 function hp(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0;return h.toString(16)}
 const PWD_HASH=0x7bd51c78.toString(16);
 function doLogin(){
-  const u=S('userInput').value.trim(),p=S('passInput').value.trim();
+  const u='hank',p=S('passInput').value.trim();
   S('loginErr').style.color='';
   if(!avatar){S('loginErr').textContent='请先设置头像';return}
-  if(!u){S('loginErr').textContent='请输入账号';return}
   if(hp(p)!==PWD_HASH){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
   S('loginErr').textContent='';
   localStorage.setItem(AUTH_KEY,JSON.stringify({user:u,avatar:avatar}));
@@ -439,7 +445,7 @@ async function go(force){
     S('statFunds').textContent=D.length;
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-    renderBuy(D); renderTop(D); renderPull(D); renderWatch(D);
+    renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D);
     S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显 · 正在同步实时数据…</span>';
     // 后台静默拉实时数据，不阻塞显示
     setTimeout(()=>fetchLive(false),100);
@@ -454,7 +460,7 @@ async function go(force){
         S('statFunds').textContent=D.length;
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-        renderBuy(D); renderTop(D); renderPull(D); renderWatch(D);
+        renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D);
         S('status').textContent='✓ 缓存数据 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
       }
@@ -492,6 +498,7 @@ async function fetchLive(showStatus){
       renderBuy(D);
       renderTop(D);
       renderPull(D);
+      renderFix(D);
       renderWatch(D);
       S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
     }else{
@@ -534,6 +541,18 @@ function renderTop(analyzed){
   S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';
 }
 
+function renderFix(analyzed){
+  // 大概率修复：近5日跌得最多的（非债券、跌幅>2%），取前8
+  const fix=analyzed.filter(x=>!x.pb.bond&&x.c5<-2).sort((a,b)=>a.c5-b.c5).slice(0,8);
+  let h='';
+  fix.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:#5b9dff">修复中</div><div class="plabel">近5日 '+f.c5.toFixed(1)+'%</div></div></div>';
+  });
+  S('fixList').innerHTML=h||'<div class="load" style="color:#8892b8">最近没有明显超跌的，暂时没啥好修复的</div>';
+}
 function renderBuy(analyzed){
   // 今日推荐：概率>=55、今日涨幅<4%、非大回调，按概率排序取前8
   const rec=analyzed.filter(x=>x.prob>=55&&x.chg<4&&!(x.pb&&x.pb.level==='big')&&!(x.pb&&x.pb.bond))
@@ -640,7 +659,6 @@ S('loginBtn').addEventListener('click',doLogin);
 S('forgotBtn').addEventListener('click',()=>{S('loginErr').style.color='#4dd4ac';S('loginErr').textContent='请联系 xhq 找回密码'});
 S('logoutBtn').addEventListener('click',doLogout);
 S('recalcBtn').addEventListener('click',()=>go(true));
-S('userInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 S('passInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 if(localStorage.getItem(AUTH_KEY))enterMain();
 </script>
