@@ -17,6 +17,18 @@ body{
   background:var(--bg);color:var(--txt);padding:16px;position:relative;overflow-x:hidden;
 }
 
+
+/* 真实动漫图背景层 */
+.anime-photo{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:url('anime-bg.jpg');background-size:cover;background-position:center top;
+  background-attachment:fixed;opacity:.38;transition:opacity .5s}
+.anime-photo::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(7,11,31,.55),rgba(7,11,31,.75))}
+.bg-switch{position:fixed;bottom:14px;right:14px;z-index:20;
+  width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);
+  background:rgba(20,20,40,.6);backdrop-filter:blur(8px);color:#fff;font-size:18px;
+  cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.bg-switch:hover{background:rgba(124,92,255,.6)}
 /* 动漫风动态背景 */
 .anime-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
   background:linear-gradient(160deg,#1a0b2e 0%,#2d1b4e 35%,#0d1b3a 70%,#1a0b2e 100%)}
@@ -497,6 +509,7 @@ function renderPull(analyzed){
 /* ===== 动漫背景生成 ===== */
 function buildAnimeBg(){
   if(document.querySelector('.anime-bg'))return;
+  const photo=document.createElement('div');photo.className='anime-photo';photo.id='animePhoto';document.body.insertBefore(photo,document.body.firstChild);
   const bg=document.createElement('div');bg.className='anime-bg';
   let stars='';
   for(let i=0;i<60;i++){
@@ -522,6 +535,11 @@ function buildAnimeBg(){
 }
 /* ===== 初始化 ===== */
 buildAnimeBg();
+let bgIdx=0;
+const sw=document.createElement('button');sw.className='bg-switch';sw.textContent='🖼️';sw.title='切换背景';sw.onclick=()=>{
+  const ph=document.getElementById('animePhoto');if(!ph)return;
+  bgIdx=(bgIdx+1)%2;ph.style.backgroundImage="url('"+(bgIdx?'anime-bg2.jpg':'anime-bg.jpg')+"')";
+};document.body.appendChild(sw);
 renderEmojiGrid();
 S('avatarFile').addEventListener('change',onAvatarFile);
 S('loginBtn').addEventListener('click',doLogin);
