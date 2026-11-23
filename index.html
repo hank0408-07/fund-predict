@@ -412,7 +412,7 @@ const NICK={
   "000003":"中海可转换债券A"
 };
 // 重点监视板块（场外基金：白酒、医疗、新能源）
-const WATCH={"白酒":["161725"],"医疗":["003096"]};
+const WATCH={"白酒":["161725"],"医疗":["003096"],"新能源":["003834"],"科技":["008888"]};
 const CODES=Object.keys(NICK);
 const pct=v=>(v>0?'+':'')+v.toFixed(2)+'%';
 function dec(buf){for(const e of ['gbk','gb18030','utf-8']){try{return new TextDecoder(e).decode(buf)}catch(x){}}return ''}
