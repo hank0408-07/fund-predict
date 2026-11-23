@@ -262,6 +262,8 @@ body::before{
     <div class="tabbar glass" id="tabbar">
       <div class="tab active" data-tab="buy">✅ 推荐</div>
       <div class="tab" data-tab="top">🏆 看涨</div>
+      <div class="tab" data-tab="up">📈 涨幅榜</div>
+      <div class="tab" data-tab="down">📉 跌幅榜</div>
       <div class="tab" data-tab="pull">⚠️ 回调</div>
       <div class="tab" data-tab="fix">💚 修复</div>
       <div class="tab" data-tab="fav">⭐ 自选</div>
@@ -274,6 +276,20 @@ body::before{
         <h2>✅ 今日推荐购买</h2>
         <div class="desc">综合看涨概率、今日涨幅、回调风险筛出来的，今天可以下手的方向。</div>
         <div id="buyList"><div class="load"><div class="spin"></div>正在挑选…</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-up">
+      <div class="card glass">
+        <h2>📈 今日涨幅榜 TOP20</h2>
+        <div class="desc">今天涨得最猛的单支基金，点一下看走势，长按加自选。</div>
+        <div id="upList"><div class="load"><div class="spin"></div>正在排名…</div></div>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel-down">
+      <div class="card glass">
+        <h2>📉 今日跌幅榜 TOP20</h2>
+        <div class="desc">今天跌得最多的单支基金，跌多了可能就是低吸机会。</div>
+        <div id="downList"><div class="load"><div class="spin"></div>正在排名…</div></div>
       </div>
     </div>
     <div class="tab-panel hidden" id="panel-top">
@@ -509,7 +525,7 @@ async function go(force){
     S('statFunds').textContent=D.length;
     S('statUp').textContent=D.filter(x=>x.prob>=60).length;
     S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-    ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderFav(); renderHold();
+    ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
     S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显 · 正在同步实时数据…</span>';
     // 后台静默拉实时数据，不阻塞显示
     setTimeout(()=>fetchLive(false),100);
@@ -524,7 +540,7 @@ async function go(force){
         S('statFunds').textContent=D.length;
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-        ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderFav(); renderHold();
+        ALL_DATA=D; renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
         S('status').textContent='✓ 缓存数据 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
       }
@@ -565,6 +581,7 @@ async function fetchLive(showStatus){
       renderPull(D);
       renderFix(D);
       renderWatch(D);
+      renderUpDown(D);
       renderFav(); renderHold();
       S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
     }else{
@@ -731,6 +748,27 @@ function drawChart(closes){
 }
 
 // 自选
+function renderRank(analyzed,type){
+  const isUp=type==='up';
+  const list=analyzed.filter(x=>isUp?x.chg>0:x.chg<0)
+                     .sort((a,b)=>isUp?b.chg-a.chg:a.chg-b.chg).slice(0,20);
+  let h='';
+  list.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    const rk=i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const cls=f.chg>=0?'#ff5e7e':'#4dd4ac';
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*30)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+(f.chg>4?'<span class="badge b-hot">猛涨</span>':'')+'</div>'+
+      '<div class="fdesc">'+f.code+' · 现价 '+Number(f.price).toFixed(3)+' · 下周概率 '+f.prob+'%</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:'+cls+'">'+(f.chg>=0?'+':'')+f.chg.toFixed(2)+'%</div>'+
+      '<div class="plabel">今日'+(isUp?'涨幅':'跌幅')+'</div></div></div>';
+  });
+  const el=S(isUp?'upList':'downList');
+  el.innerHTML=h||'<div class="fav-empty">今天没有'+(isUp?'上涨':'下跌')+'的基金</div>';
+  bindItemEvents(isUp?'upList':'downList');
+}
+function renderUpDown(analyzed){renderRank(analyzed,'up');renderRank(analyzed,'down')}
+
 function renderFav(){
   const fav=getLS(FAV_KEY,[]);
   if(!fav.length){S('favList').innerHTML='<div class="fav-empty">还没有自选基金<br>在任意基金上长按即可加入</div>';return}
