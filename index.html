@@ -320,6 +320,7 @@ async function quotes(){
   let txt='';
   try{
     const r=await fetch('https://qt.gtimg.cn/q='+CODES.join(','),{cache:'no-store'});
+    if(!r.ok)throw new Error('行情接口 '+r.status);
     txt=dec(await r.arrayBuffer());
   }catch(e){
     const r=await fetch('https://qt.gtimg.cn/q='+CODES.join(','),{cache:'no-store',mode:'no-cors'});
@@ -332,26 +333,21 @@ async function quotes(){
   }).filter(f=>f.code&&f.price>0&&!isNaN(f.chg));
 }
 async function kline(code){
+  // 唯一稳定可用端点（其他会501或无CORS）
   const eps=[
-    'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=',
     'https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=',
-    'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param='
+    'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='
   ];
-  // 三个端点同时竞速，谁先返回有效数据用谁，单请求3秒超时
-  const jobs=eps.map(b=>(async()=>{
+  for(const b of eps){
     const ctl=new AbortController();
-    const timer=setTimeout(()=>ctl.abort(),3000);
+    const timer=setTimeout(()=>ctl.abort(),4000);
     try{
       const r=await fetch(b+code+',day,,,21,qfq',{cache:'no-store',signal:ctl.signal});
-      if(!r.ok)return null;
+      if(!r.ok)continue;
       const j=await r.json(),node=j.data&&j.data[code];
       const d=(node&&(node.qfqday||node.day))||[];
       if(d.length>=15)return d.map(k=>parseFloat(k[2]));
     }catch(e){}finally{clearTimeout(timer)}
-    return null;
-  })());
-  for(const job of jobs){
-    try{const r=await job;if(r)return r}catch(e){}
   }
   return [];
 }
@@ -430,7 +426,7 @@ async function fetchLive(showStatus){
     if(showStatus)S('status').textContent='行情OK '+funds.length+'只，并行分析中…';
     // 并行分批拉K线（每批12只），大幅提速
     const analyzed=[];
-    const BATCH=12;
+    const BATCH=6;
     for(let i=0;i<funds.length;i+=BATCH){
       const slice=funds.slice(i,i+BATCH);
       const res=await Promise.all(slice.map(async f=>{
