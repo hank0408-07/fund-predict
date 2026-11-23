@@ -191,6 +191,42 @@ body::before{
 .tag-good{color:#fff;background:linear-gradient(90deg,#ff5e7e,#c9184a);box-shadow:0 4px 14px rgba(255,94,126,.3)}
 .tag-mid{color:#fff;background:linear-gradient(90deg,#5b9dff,#4361ee)}
 .tag-wait{color:#8892b8;background:rgba(255,255,255,.08)}
+
+/* 搜索栏 */
+.search-wrap{position:relative;margin:0 12px 14px}
+.search-box{width:100%;padding:12px 40px 12px 40px;border-radius:14px;
+  background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--txt);
+  font-size:14px;outline:none;transition:.2s}
+.search-box:focus{border-color:#7c5cff;box-shadow:0 0 0 3px rgba(124,92,255,.15);background:rgba(255,255,255,.1)}
+.search-ico{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.6;font-size:16px}
+.search-clear{position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--mut);font-size:14px;display:none}
+.search-clear.show{display:block}
+.search-drop{position:absolute;top:100%;left:0;right:0;margin-top:6px;z-index:60;
+  background:rgba(15,15,40,.95);backdrop-filter:blur(16px);border:1px solid var(--line);
+  border-radius:14px;max-height:360px;overflow:auto;display:none;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.search-drop.show{display:block}
+.search-item{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;border-top:1px solid rgba(255,255,255,.06);transition:.15s}
+.search-item:first-child{border-top:none}
+.search-item:hover{background:rgba(124,92,255,.12)}
+.search-item-name{flex:1;font-size:13px;font-weight:600}
+.search-item-code{font-size:10px;color:var(--mut)}
+.search-item-meta{font-size:11px;text-align:right;min-width:70px}
+.search-empty{text-align:center;padding:20px;color:var(--mut);font-size:12px}
+/* 详情弹层 */
+.detail-box{width:100%;max-width:680px;padding:22px;max-height:92vh;overflow:auto}
+.detail-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.detail-name{font-size:20px;font-weight:900;margin-bottom:2px}
+.detail-code{font-size:11px;color:var(--mut)}
+.detail-price{font-size:34px;font-weight:900;margin:6px 0}
+.detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
+.detail-cell{padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.detail-cell .lab{font-size:10px;color:var(--mut);margin-bottom:4px}
+.detail-cell .val{font-size:15px;font-weight:700}
+.detail-actions{display:flex;gap:10px;margin-top:14px}
+.detail-actions button{flex:1;padding:12px;border-radius:12px;border:0;cursor:pointer;font-size:14px;font-weight:700}
+.btn-fav{background:rgba(255,255,255,.08);color:var(--txt);border:1px solid var(--line)}
+.btn-fav:hover{background:rgba(124,92,255,.15)}
+.btn-hold{background:var(--acc);color:#fff}
 /* 弹层 */
 .modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
 .modal.hidden{display:none!important}
@@ -259,6 +295,14 @@ body::before{
       <div class="sub">AI 动量模型 · 每日净值分析 700 只主流基金</div>
     </div>
     <div class="status" id="status">准备分析…</div>
+
+    <!-- 智能搜索 -->
+    <div class="search-wrap">
+      <span class="search-ico">🔍</span>
+      <input class="search-box" id="searchInput" placeholder="搜基金名称或代码，如 161725 / 白酒 / 医疗" autocomplete="off">
+      <span class="search-clear" id="searchClear">✕</span>
+      <div class="search-drop" id="searchDrop"></div>
+    </div>
 
     <div class="stats">
       <div class="stat glass"><div class="num grad" id="statFunds">--</div><div class="lab">扫描基金</div></div>
@@ -382,6 +426,31 @@ body::before{
     </div>
   </div>
 </div>
+
+<!-- 基金详情弹层 -->
+<div id="detailModal" class="modal hidden">
+  <div class="modal-box detail-box glass">
+    <div class="modal-head"><span class="modal-close" id="detailClose">✕</span></div>
+    <div class="detail-head">
+      <div><div class="detail-name" id="dName">--</div><div class="detail-code" id="dCode">--</div></div>
+      <div style="text-align:right"><div class="detail-price" id="dPrice">--</div><div id="dChg" style="font-size:14px;font-weight:700">--</div></div>
+    </div>
+    <canvas id="dChart" width="640" height="220" class="chart-canvas"></canvas>
+    <div class="detail-grid">
+      <div class="detail-cell"><div class="lab">下周看涨概率</div><div class="val" id="dProb">--</div></div>
+      <div class="detail-cell"><div class="lab">近5日涨跌</div><div class="val" id="dC5">--</div></div>
+      <div class="detail-cell"><div class="lab">回调风险</div><div class="val" id="dPull">--</div></div>
+      <div class="detail-cell"><div class="lab">所属板块</div><div class="val" id="dSec">--</div></div>
+      <div class="detail-cell"><div class="lab">三个月趋势</div><div class="val" id="dM3">--</div></div>
+      <div class="detail-cell"><div class="lab">今日建议</div><div class="val" id="dBuy">--</div></div>
+    </div>
+    <div class="detail-actions">
+      <button class="btn-fav" id="dFavBtn">⭐ 加入自选</button>
+      <button class="btn-hold" id="dHoldBtn">💰 记持仓</button>
+    </div>
+  </div>
+</div>
+
 
 </div>
 
@@ -937,6 +1006,130 @@ function bindItemEvents(containerId){
     }
   });
 })();
+
+/* ===== 智能搜索 ===== */
+let searchTimer=null;
+function initSearch(){
+  const inp=S('searchInput'),drop=S('searchDrop'),clr=S('searchClear');
+  inp.addEventListener('input',()=>{
+    clearTimeout(searchTimer);
+    const q=inp.value.trim().toLowerCase();
+    clr.classList.toggle('show',q.length>0);
+    if(!q){drop.classList.remove('show');return}
+    searchTimer=setTimeout(()=>doSearch(q),150);
+  });
+  clr.onclick=()=>{inp.value='';clr.classList.remove('show');drop.classList.remove('show')};
+  inp.onfocus=()=>{if(inp.value.trim())doSearch(inp.value.trim().toLowerCase())};
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.search-wrap'))drop.classList.remove('show');
+  });
+}
+function doSearch(q){
+  const drop=S('searchDrop');
+  if(!ALL_DATA||!ALL_DATA.length){drop.innerHTML='<div class="search-empty">数据加载中…</div>';drop.classList.add('show');return}
+  const hits=ALL_DATA.filter(f=>{
+    const name=(f.nick||f.full||'').toLowerCase();
+    const full=(f.full||'').toLowerCase();
+    const code=(f.code||'');
+    return code.includes(q)||name.includes(q)||full.includes(q);
+  }).slice(0,12);
+  if(!hits.length){drop.innerHTML='<div class="search-empty">没有找到匹配的基金</div>';drop.classList.add('show');return}
+  drop.innerHTML=hits.map(f=>{
+    const chg=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
+    const probC=f.prob>=60?'color:#ff5e7e':f.prob>=45?'color:#5b9dff':'color:#8892b8';
+    return '<div class="search-item" data-scode="'+f.code+'">'+
+      '<div><div class="search-item-name">'+f.nick+'<span class="search-item-code"> '+f.code+'</span></div>'+
+      '<div style="font-size:10px;color:#8892b8;margin-top:2px">'+(f.sec||'综合')+' · 3月'+(f.m3>=0?'+':'')+f.m3+'%</div></div>'+
+      '<div class="search-item-meta"><div style="'+chg+';font-weight:700">'+pct(f.chg)+'</div>'+
+      '<div style="'+probC+';font-size:10px">看涨'+f.prob+'%</div></div></div>';
+  }).join('');
+  drop.classList.add('show');
+  drop.querySelectorAll('.search-item').forEach(it=>{
+    it.onclick=()=>{drop.classList.remove('show');openDetail(it.dataset.scode)};
+  });
+}
+
+/* ===== 基金详情 ===== */
+async function openDetail(code){
+  const f=ALL_DATA.find(x=>x.code===code);
+  if(!f)return;
+  const modal=S('detailModal');modal.classList.remove('hidden');
+  S('searchDrop').classList.remove('show');
+  S('dName').textContent=f.nick||f.full||code;
+  S('dCode').textContent=code+' · '+(f.full||'');
+  S('dPrice').textContent=f.price.toFixed(3);
+  S('dPrice').style.color=f.chg>0?'#ff5e7e':f.chg<0?'#4dd4ac':'#e8ecff';
+  S('dChg').textContent='今日 '+pct(f.chg);
+  S('dChg').style.color=f.chg>0?'#ff5e7e':f.chg<0?'#4dd4ac':'#8892b8';
+  S('dProb').textContent=f.prob+'%';
+  S('dProb').style.color=f.prob>=60?'#ff5e7e':f.prob>=45?'#5b9dff':'#8892b8';
+  S('dC5').textContent=(f.c5>=0?'+':'')+f.c5+'%';
+  S('dC5').style.color=f.c5>=0?'#ff5e7e':'#4dd4ac';
+  S('dPull').textContent=f.pb&&f.pb.level==='big'?'⚠️ 大回调风险':'✅ 回调温和';
+  S('dPull').style.color=f.pb&&f.pb.level==='big'?'#ffb457':'#4dd4ac';
+  S('dSec').textContent=f.sec||'综合';
+  S('dM3').textContent=(f.m3>=0?'+':'')+f.m3+'%';
+  S('dM3').style.color=f.m3>=0?'#ff5e7e':'#4dd4ac';
+  const buy=f.prob>=60&&f.chg<4&&!(f.pb&&f.pb.level==='big');
+  S('dBuy').textContent=buy?'✅ 能买':'⚠️ 观望';
+  S('dBuy').style.color=buy?'#4dd4ac':'#ffb457';
+
+  // 自选按钮状态
+  const isFav=getLS(FAV_KEY,[]).some(x=>x.code===code);
+  S('dFavBtn').textContent=isFav?'★ 已自选':'⭐ 加入自选';
+  S('dFavBtn').onclick=()=>{
+    let fav=getLS(FAV_KEY,[]);
+    if(fav.some(x=>x.code===code)){fav=fav.filter(x=>x.code!==code);S('dFavBtn').textContent='⭐ 加入自选';uniToast('已移除自选')}
+    else{fav.push({code,nick:f.nick||code});S('dFavBtn').textContent='★ 已自选';uniToast('已加入自选 ⭐')}
+    setLS(FAV_KEY,fav);renderFav();
+  };
+  S('dHoldBtn').onclick=()=>{
+    S('holdCode').value=code;S('holdPrice').value=f.price;S('holdQty').value='';
+    S('holdModal').classList.remove('hidden');
+  };
+
+  // 加载K线
+  const ctx=S('dChart').getContext('2d');
+  ctx.clearRect(0,0,S('dChart').width,S('dChart').height);
+  ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';
+  ctx.fillText('加载K线中…',S('dChart').width/2,S('dChart').height/2);
+  const pts=await kline(code);
+  drawChartOn(S('dChart'),pts);
+}
+function drawChartOn(cv,points){
+  const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
+  const closes=points.map(p=>p.v),dates=points.map(p=>p.d);
+  const min=Math.min(...closes),max=Math.max(...closes),range=(max-min)||1;
+  const padL=42,padR=14,padT=26,padB=34;
+  const plotW=W-padL-padR,plotH=H-padT-padB;
+  ctx.font='10px sans-serif';
+  for(let i=0;i<=4;i++){
+    const y=padT+plotH*i/4,val=max-range*i/4;
+    ctx.strokeStyle='rgba(255,255,255,.07)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();
+    ctx.fillStyle='#8892b8';ctx.textAlign='right';ctx.fillText(val.toFixed(3),padL-5,y+3);
+  }
+  const pts2=closes.map((v,i)=>[padL+plotW*i/(closes.length-1),padT+plotH*(1-(v-min)/range)]);
+  const grad=ctx.createLinearGradient(0,padT,0,padT+plotH);
+  grad.addColorStop(0,'rgba(124,92,255,.32)');grad.addColorStop(1,'rgba(124,92,255,0)');
+  ctx.beginPath();ctx.moveTo(pts2[0][0],padT+plotH);pts2.forEach(pt=>ctx.lineTo(pt[0],pt[1]));ctx.lineTo(pts2[pts2.length-1][0],padT+plotH);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();pts2.forEach((pt,i)=>i?ctx.lineTo(pt[0],pt[1]):ctx.moveTo(pt[0],pt[1]));
+  ctx.strokeStyle='#a78bfa';ctx.lineWidth=2.5;ctx.stroke();
+  const lastPt=pts2[pts2.length-1];
+  ctx.beginPath();ctx.arc(lastPt[0],lastPt[1],4,0,Math.PI*2);ctx.fillStyle='#c4b5fd';ctx.fill();
+  ctx.fillStyle='#8892b8';ctx.font='10px sans-serif';ctx.textAlign='center';
+  [0,Math.floor((dates.length-1)/2),dates.length-1].forEach((ix,n)=>{
+    const x=padL+plotW*ix/(dates.length-1),label=dates[ix].slice(5);
+    ctx.textAlign=n===0?'left':(n===2?'right':'center');
+    ctx.fillText(label,n===0?padL:(n===2?W-padR:x),H-12);
+  });
+  const first=closes[0],last=closes[closes.length-1],chg=(last/first-1)*100;
+  ctx.fillStyle='#e8ecff';ctx.font='bold 12px sans-serif';ctx.textAlign='left';
+  ctx.fillText('起 '+first.toFixed(3)+' ('+dates[0].slice(5)+')',padL,16);
+  ctx.textAlign='right';ctx.fillStyle=chg>=0?'#ff5e7e':'#4dd4ac';
+  ctx.fillText('现 '+last.toFixed(3)+' ('+(chg>=0?'+':'')+chg.toFixed(1)+'%)',W-padR,16);
+}
 /* ===== Tab 切换 ===== */
 document.querySelectorAll('#tabbar .tab').forEach(t=>{
   t.addEventListener('click',()=>{
@@ -950,6 +1143,8 @@ document.querySelectorAll('#tabbar .tab').forEach(t=>{
 /* ===== 弹层/持仓事件 ===== */
 S('chartClose').onclick=()=>S('chartModal').classList.add('hidden');
 S('chartModal').onclick=(e)=>{if(e.target.id==='chartModal')S('chartModal').classList.add('hidden')};
+S('detailClose').onclick=()=>S('detailModal').classList.add('hidden');
+S('detailModal').onclick=(e)=>{if(e.target.id==='detailModal')S('detailModal').classList.add('hidden')};
 S('holdClose').onclick=()=>S('holdModal').classList.add('hidden');
 S('holdModal').onclick=(e)=>{if(e.target.id==='holdModal')S('holdModal').classList.add('hidden')};
 S('addHoldBtn').onclick=()=>{S('holdCode').value='';S('holdPrice').value='';S('holdQty').value='';S('holdModal').classList.remove('hidden')};
@@ -984,6 +1179,7 @@ S('forgotBtn').addEventListener('click',()=>{S('loginErr').style.color='#4dd4ac'
 S('logoutBtn').addEventListener('click',doLogout);
 S('recalcBtn').addEventListener('click',()=>go(true));
 S('passInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+initSearch();
 if(localStorage.getItem(AUTH_KEY))enterMain();
 </script>
 </body>
