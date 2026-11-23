@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>下周涨什么 · 基金预测</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0d1233; color: #e0e6f0; padding: 16px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 4px; background: linear-gradient(90deg,#f56c6c,#f5a623,#34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { text-align: center; color: #8892b0; font-size: 12px; margin-bottom: 14px; }
+  .dbg { background: rgba(255,255,255,.06); border-radius: 8px; padding: 7px 12px; font-size: 11px; color: #8892b0; margin-bottom: 12px; font-family: monospace; text-align: center; }
+  .tip { background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.3); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #a78bfa; margin-bottom: 14px; line-height: 1.6; }
+  .card { background: rgba(255,255,255,.05); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 15px; color: #e0e6f0; margin-bottom: 10px; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-top: 1px solid rgba(255,255,255,.07); }
+  .item:first-of-type { border-top: none; }
+  .rank { font-size: 20px; font-weight: 800; width: 30px; text-align: center; }
+  .r1 { color: #f5d20a; } .r2 { color: #c0c0c0; } .r3 { color: #cd7f32; }
+  .info { flex: 1; min-width: 0; }
+  .fname { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .fdesc { font-size: 11px; color: #8892b0; }
+  .probbox { text-align: right; min-width: 90px; }
+  .prob { font-size: 22px; font-weight: 800; }
+  .p-hi { color: #f56c6c; } .p-mi { color: #f5a623; } .p-lo { color: #8892b0; }
+  .plabel { font-size: 10px; color: #8892b0; }
+  .bar { height: 6px; background: rgba(255,255,255,.1); border-radius: 3px; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg,#f5a623,#f56c6c); border-radius: 3px; }
+  .badge { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .b-hot { background: rgba(245,108,108,.18); color: #f56c6c; }
+  .b-up { background: rgba(52,211,153,.15); color: #34d399; }
+  .load { text-align: center; padding: 22px; color: #8892b0; font-size: 13px; }
+  .spin { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.15); border-top-color: #4f9cf9; border-radius: 50%; animation: sp .8s linear infinite; margin: 0 auto 8px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .err { color: #f56c6c; font-size: 11px; }
+  button { width: 100%; padding: 12px; margin-top: 8px; background: linear-gradient(90deg,#f5a623,#f56c6c); border: 0; border-radius: 10px; color: #fff; font-size: 15px; font-weight: 700; }
+  .foot { text-align: center; color: #5a6478; font-size: 10px; margin-top: 16px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>下周涨什么？</h1>
+  <div class="sub">每周自动预测 · 用大白话告诉你买啥方向</div>
+  <div class="tip">🔮 模型怎么看：拉每只基金最近一个月的走势，算「势头」和「连续性」，势头越猛、越涨越有劲的，下周继续涨的概率越大。<b>概率仅供参考，不是保证，别梭哈。</b></div>
+  <div class="dbg" id="dbg">初始化…</div>
+
+  <div class="card">
+    <h2>🏆 下周最可能涨的基金 TOP10</h2>
+    <div id="list"><div class="load"><div class="spin"></div>正在分析 40 只热门基金…</div></div>
+  </div>
+
+  <button onclick="go()">🔄 再算一次</button>
+  <div class="foot">
+    数据：腾讯财经实时行情 + 21日历史走势 · 模型：动量回归×连续性<br>
+    仅供参考，不构成投资建议 · 基金有风险，投资需谨慎
+  </div>
+</div>
+<script>
+// ===== 通俗名字映射(说人话) =====
+const NICK = {
+  "sz159855": "影视传媒", "sh512480": "半导体", "sz159915": "创业板大盘股", "sh510300": "沪深300蓝筹",
+  "sh588000": "科创板龙头", "sh512880": "券商", "sz159949": "创业板大公司", "sh512690": "白酒",
+  "sz159992": "创新药", "sh512760": "芯片", "sz159611": "电力", "sh515790": "光伏",
+  "sz159819": "人工智能", "sh515030": "新能源车", "sz159766": "旅游", "sh561560": "机器人",
+  "sz159583": "通信5G", "sh513050": "中国互联网(港股)", "sz159792": "半导体设备", "sh513180": "恒生科技(港股)",
+  "sz159509": "数字货币概念", "sh513500": "美股纳指", "sz159680": "稀土", "sh516160": "新能源",
+  "sz159869": "游戏", "sh515880": "通信", "sz159696": "家电", "sh512400": "有色金属",
+  "sz159649": "化工", "sh517080": "地产", "sz159822": "化工龙头", "sh515220": "煤炭",
+  "sz159551": "机器人产业链", "sh560580": "并购重组", "sz159587": "化工新材料", "sh517390": "港股中概",
+  "sz159557": "港股医疗", "sh561760": "央视50", "sz159579": "半导体设备2", "sh513980": "石油天然气"
+};
+
+const CODES = Object.keys(NICK);
+const pct = v => (v>0?'+':'')+v.toFixed(2)+'%';
+const cls = v => v>0?'up':v<0?'down':'';
+
+function dec(buf) {
+  for (const enc of ['gbk','gb18030','utf-8']) { try { return new TextDecoder(enc).decode(buf); } catch(e) {} }
+  return '';
+}
+const dbg = m => { const el = document.getElementById('dbg'); if (el) el.textContent = m; };
+
+async function quotes() {
+  let txt = '';
+  try {
+    const r = await fetch('https://qt.gtimg.cn/q=' + CODES.join(','), { cache: 'no-store' });
+    txt = dec(await r.arrayBuffer());
+  } catch(e) {
+    const r = await fetch('https://qt.gtimg.cn/q=' + CODES.join(','), { cache: 'no-store', mode: 'no-cors' });
+    txt = dec(await r.arrayBuffer());
+  }
+  return txt.split(';').filter(x => x.includes('~')).map(line => {
+    const p = line.split('~');
+    // p[2]是纯数字代码,反查CODES拿到带sz/sh前缀的完整码用于K线
+    const full = CODES.find(c => c.endsWith(p[2])) || p[2];
+    return { full: p[1], code: full, price: parseFloat(p[3]), chg: parseFloat(p[32]) };
+  }).filter(f => f.code && f.price > 0 && !isNaN(f.chg));
+}
+
+async function kline(code) {
+  // 多端点兜底：原 web.ifzq.gtimg.cn 在部分网络返回 501
+  const endpoints = [
+    'https://ifzq.gtimg.cn/appstock/app/fqkline/get?param=',
+    'https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=',
+    'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=',
+    'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='
+  ];
+  for (const base of endpoints) {
+    try {
+      const r = await fetch(base + code + ',day,,,21,qfq', { cache: 'no-store' });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const node = j.data && j.data[code];
+      const d = (node && (node.qfqday || node.day)) || [];
+      if (d.length >= 15) return d.map(k => parseFloat(k[2]));
+    } catch(e) {}
+  }
+  return [];
+}
+
+function predict(closes) {
+  if (closes.length < 15) return null;
+  const n = closes.length;
+  let sx=0, sy=0, sxy=0, sxx=0;
+  for (let i = 0; i < n; i++) { sx+=i; sy+=closes[i]; sxy+=i*closes[i]; sxx+=i*i; }
+  const slope = (n*sxy - sx*sy)/(n*sxx - sx*sx);
+  const sp = slope/(sy/n)*100*5;
+  const c5 = (closes[n-1]/closes[n-6]-1)*100;
+  let up = 0; for (let i = n-5; i < n; i++) if (closes[i] > closes[i-1]) up++;
+  return { prob: Math.max(5, Math.min(95, Math.round(50 + sp*2.5 + c5*0.7 + (up-2.5)*5))), c5 };
+}
+
+async function go() {
+  try {
+    dbg('拉取行情…');
+    const funds = await quotes();
+    dbg('行情OK ' + funds.length + '只,分析K线(约5秒)…');
+    const analyzed = [];
+    for (const f of funds) {
+      // 用 CODES 数组里带 sz/sh 前缀的原码,不用腾讯行情返回的纯数字码
+      try {
+        const p = predict(await kline(f.code));
+        if (p) analyzed.push({ ...f, ...p });
+      } catch(e) {
+        // 兜底: 给纯数字码补前缀重试
+        try {
+          const full = CODES.find(c => c.endsWith(f.code));
+          if (full) {
+            const p = predict(await kline(full));
+            if (p) analyzed.push({ ...f, ...p });
+          }
+        } catch(e2) {}
+      }
+    }
+    analyzed.sort((a,b)=>b.prob-a.prob);
+    const top = analyzed.slice(0, 10);
+    let html = '';
+    top.forEach((f, i) => {
+      const rankCls = i===0?'r1':i===1?'r2':i===2?'r3':'';
+      const nick = NICK[f.code] || f.full;
+      const hot = f.chg > 2 ? '<span class="badge b-hot">今日涨' + pct(f.chg) + '</span>' : '';
+      const pcls = f.prob>=65?'p-hi':f.prob>=55?'p-mi':'p-lo';
+      const verdict = f.prob>=70?'下周很可能涨':f.prob>=60?'下周偏涨':f.prob>=50?'涨跌各半':'暂时观望';
+      html += '<div class="item"><div class="rank '+rankCls+'">'+(i+1)+'</div>' +
+        '<div class="info"><div class="fname">'+nick+hot+'</div>' +
+        '<div class="fdesc">'+f.full+' · 今日'+pct(f.chg)+' · 近5日'+pct(f.c5)+' · '+verdict+'</div></div>' +
+        '<div class="probbox"><div class="prob '+pcls+'">'+f.prob+'%</div><div class="plabel">下周看涨概率</div>' +
+        '<div class="bar"><i style="width:'+f.prob+'%"></i></div></div></div>';
+    });
+    document.getElementById('list').innerHTML = html || '<div class="load err">没有可用数据</div>';
+    dbg('完成 ✓ ' + new Date().toLocaleTimeString('zh-CN'));
+  } catch(e) {
+    dbg('<span class="err">错误: '+e.message+'</span>');
+    document.getElementById('list').innerHTML = '<div class="load err">'+e.message+'<br>请确认是用 Safari 打开的本页面</div>';
+  }
+}
+go();
+</script>
+</body>
+</html>
