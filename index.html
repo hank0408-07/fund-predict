@@ -82,13 +82,9 @@ body::before{
 .avatar-preview img{width:100%;height:100%;object-fit:cover}
 .avatar-tip{text-align:left;font-size:11px;color:var(--mut);line-height:1.7}
 .avatar-tip b{color:var(--txt)}
-.emoji-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:6px 0 14px}
-.emoji-grid span{
   font-size:24px;padding:8px 0;border-radius:12px;cursor:pointer;
   background:rgba(255,255,255,.05);border:1px solid transparent;transition:.2s;
 }
-.emoji-grid span:hover{transform:translateY(-2px);background:rgba(255,255,255,.1)}
-.emoji-grid span.sel{border-color:#7c5cff;background:rgba(124,92,255,.18);box-shadow:0 0 14px rgba(124,92,255,.4)}
 .upload-btn{
   display:inline-block;font-size:12px;color:var(--blue);cursor:pointer;
   border:1px dashed var(--line);border-radius:10px;padding:8px 14px;margin-bottom:16px;transition:.2s;
@@ -194,14 +190,13 @@ body::before{
         <p class="sub">登录以解锁下周行情预测系统</p>
 
         <div class="avatar-row">
-          <div class="avatar-preview" id="avatarPreview">🚀</div>
+          <div class="avatar-preview" id="avatarPreview">👤</div>
           <div class="avatar-tip">
-            <b>选择头像</b><br>
+            <b>上传头像</b><br>
             设置后即可进入系统
           </div>
         </div>
-        <div class="emoji-grid" id="emojiGrid"></div>
-        <label class="upload-btn">📷 上传自定义头像<input type="file" id="avatarFile" accept="image/*"></label>
+        <label class="upload-btn" style="display:block;margin:6px 0 16px">📷 点击上传头像<input type="file" id="avatarFile" accept="image/*"></label>
 
         <div class="field"><span class="ico">👤</span><input id="userInput" placeholder="账号（随意输入）" autocomplete="off"></div>
         <div class="field"><span class="ico">🔒</span><input id="passInput" type="password" autocomplete="new-password" spellcheck="false" placeholder="请输入密码"></div>
@@ -282,21 +277,14 @@ function dec(buf){for(const e of ['gbk','gb18030','utf-8']){try{return new TextD
 const S=(id)=>document.getElementById(id);
 
 /* ===== 登录系统 ===== */
-const EMOJIS=['🚀','🐼','🦊','😎','🌟','🔥','🐉','🤖','👾','🦁','🐯','💎'];
-let avatar='🚀';
+let avatar='';
 const AUTH_KEY='FUND_PRO_AUTH';
 const CACHE_KEY='FUND_PRO_CACHE';
-const SNAPSHOT={"t":1795423410786,"data":[{"code":"sz159855","full":"影视ETF银华","price":0.794,"chg":7.01,"prob":37,"c5":-10.18,"pb":{"level":"small","risk":15},"nick":"影视传媒"},{"code":"sh512480","full":"半导体ETF国联安","price":0.748,"chg":0.4,"prob":56,"c5":0.13,"pb":{"level":"small","risk":6},"nick":"半导体"},{"code":"sz159915","full":"创业板ETF易方达","price":2.295,"chg":2.91,"prob":38,"c5":-1.46,"pb":{"level":"small","risk":7},"nick":"创业板大盘股"},{"code":"sh510300","full":"沪深300ETF华泰柏瑞","price":4.023,"chg":0.12,"prob":50,"c5":-0.84,"pb":{"level":"small","risk":4},"nick":"沪深300蓝筹"},{"code":"sh588000","full":"科创50ETF华夏","price":1.298,"chg":-0.15,"prob":53,"c5":1.4,"pb":{"level":"small","risk":5},"nick":"科创板龙头"},{"code":"sh512880","full":"证券ETF国泰","price":0.984,"chg":0.31,"prob":51,"c5":-0.1,"pb":{"level":"small","risk":4},"nick":"券商"},{"code":"sz159949","full":"创业板50ETF华安","price":1.018,"chg":2.93,"prob":37,"c5":-1.64,"pb":{"level":"small","risk":7},"nick":"创业板大公司"},{"code":"sh512690","full":"酒ETF鹏华","price":0.432,"chg":0.23,"prob":43,"c5":-3.15,"pb":{"level":"small","risk":1},"nick":"白酒"},{"code":"sz159992","full":"创新药ETF银华","price":0.775,"chg":3.33,"prob":39,"c5":-2.39,"pb":{"level":"small","risk":7},"nick":"创新药"},{"code":"sh512760","full":"芯片ETF国泰","price":0.808,"chg":0.25,"prob":57,"c5":0.62,"pb":{"level":"small","risk":7},"nick":"芯片"},{"code":"sz159611","full":"电力ETF广发","price":1.031,"chg":-1.43,"prob":48,"c5":-0.96,"pb":{"level":"small","risk":1},"nick":"电力"},{"code":"sh515790","full":"光伏ETF华泰柏瑞","price":0.643,"chg":1.26,"prob":35,"c5":-5.02,"pb":{"level":"small","risk":6},"nick":"光伏"},{"code":"sz159819","full":"人工智能ETF易方达","price":1.272,"chg":2.5,"prob":38,"c5":-4.22,"pb":{"level":"small","risk":7},"nick":"人工智能"},{"code":"sh515030","full":"新能源车ETF华夏","price":1.237,"chg":2.15,"prob":37,"c5":-3.06,"pb":{"level":"small","risk":6},"nick":"新能源车"},{"code":"sz159766","full":"旅游ETF富国","price":0.522,"chg":0.58,"prob":41,"c5":-3.87,"pb":{"level":"small","risk":5},"nick":"旅游"},{"code":"sh561560","full":"电力ETF华泰柏瑞","price":1.253,"chg":-1.34,"prob":53,"c5":-0.79,"pb":{"level":"small","risk":1},"nick":"机器人"},{"code":"sz159583","full":"通信ETF富国","price":0.952,"chg":5.08,"prob":29,"c5":-3.16,"pb":{"level":"small","risk":8},"nick":"通信5G"},{"code":"sh513050","full":"中概互联网ETF易方达","price":0.863,"chg":0.58,"prob":33,"c5":-8.29,"pb":{"level":"small","risk":6},"nick":"中国互联网(港股)"},{"code":"sz159792","full":"港股通互联网ETF富国","price":0.455,"chg":0.89,"prob":31,"c5":-10.61,"pb":{"level":"small","risk":7},"nick":"半导体设备"},{"code":"sh513180","full":"恒生科技ETF华夏","price":0.44,"chg":0.23,"prob":34,"c5":-7.95,"pb":{"level":"small","risk":6},"nick":"恒生科技(港股)"},{"code":"sz159509","full":"纳指科技ETF景顺","price":2.64,"chg":-1.57,"prob":35,"c5":-8.81,"pb":{"level":"small","risk":4},"nick":"数字货币概念"},{"code":"sh513500","full":"标普500ETF博时","price":2.455,"chg":-0.77,"prob":36,"c5":-5.49,"pb":{"level":"small","risk":2},"nick":"美股纳指"},{"code":"sz159680","full":"中证1000增强ETF招商","price":1.285,"chg":2.88,"prob":38,"c5":-5.1,"pb":{"level":"small","risk":7},"nick":"稀土"},{"code":"sh516160","full":"新能源ETF南方","price":1.847,"chg":1.21,"prob":36,"c5":-4.39,"pb":{"level":"small","risk":5},"nick":"新能源"},{"code":"sz159869","full":"游戏ETF华夏","price":0.913,"chg":4.34,"prob":32,"c5":-8.15,"pb":{"level":"small","risk":9},"nick":"游戏"},{"code":"sh515880","full":"通信ETF国泰","price":0.381,"chg":5.25,"prob":30,"c5":-1.3,"pb":{"level":"small","risk":10},"nick":"通信"},{"code":"sz159696","full":"纳指ETF易方达","price":1.92,"chg":-0.78,"prob":40,"c5":-5.33,"pb":{"level":"small","risk":2},"nick":"家电"},{"code":"sh512400","full":"有色金属ETF南方","price":1.282,"chg":3.22,"prob":32,"c5":-3.9,"pb":{"level":"small","risk":6},"nick":"有色金属"},{"code":"sz159649","full":"国开债ETF华安","price":110.912,"chg":0.0,"prob":58,"c5":0.15,"pb":{"level":"small","risk":0},"nick":"化工"},{"code":"sh517080","full":"沪港深500ETF汇添富","price":0.863,"chg":-0.46,"prob":34,"c5":-3.25,"pb":{"level":"small","risk":1},"nick":"地产"},{"code":"sz159822","full":"新经济ETF银华","price":0.506,"chg":0.2,"prob":37,"c5":-5.6,"pb":{"level":"small","risk":5},"nick":"化工龙头"},{"code":"sh515220","full":"煤炭ETF国泰","price":1.148,"chg":-1.12,"prob":37,"c5":-3.69,"pb":{"level":"small","risk":1},"nick":"煤炭"},{"code":"sz159551","full":"机器人ETF国泰","price":1.064,"chg":6.61,"prob":37,"c5":-1.39,"pb":{"level":"small","risk":13},"nick":"机器人产业链"},{"code":"sh560580","full":"电力ETF南方","price":1.09,"chg":-1.36,"prob":48,"c5":-0.73,"pb":{"level":"small","risk":1},"nick":"并购重组"},{"code":"sz159587","full":"粮食ETF广发","price":1.012,"chg":2.85,"prob":38,"c5":-2.5,"pb":{"level":"small","risk":6},"nick":"化工新材料"},{"code":"sh517390","full":"云计算ETF天弘","price":1.395,"chg":1.68,"prob":36,"c5":-6.12,"pb":{"level":"small","risk":7},"nick":"港股中概"},{"code":"sz159557","full":"恒生医疗ETF嘉实","price":1.26,"chg":3.28,"prob":37,"c5":-5.26,"pb":{"level":"small","risk":7},"nick":"港股医疗"},{"code":"sh561760","full":"油气ETF博时","price":1.204,"chg":-0.5,"prob":34,"c5":-2.03,"pb":{"level":"small","risk":2},"nick":"央视50"},{"code":"sz159579","full":"深主板50ETF华安","price":1.105,"chg":0.0,"prob":54,"c5":1.01,"pb":{"level":"small","risk":2},"nick":"半导体设备2"},{"code":"sh513980","full":"港股科技ETF景顺","price":0.459,"chg":0.88,"prob":34,"c5":-6.33,"pb":{"level":"small","risk":6},"nick":"石油天然气"},{"code":"sh518880","full":"黄金ETF华安","price":7.396,"chg":1.57,"prob":38,"c5":-5.76,"pb":{"level":"small","risk":6},"nick":"黄金ETF"},{"code":"sz159934","full":"黄金ETF易方达","price":7.726,"chg":1.64,"prob":38,"c5":-5.77,"pb":{"level":"small","risk":7},"nick":"黄金易方达"},{"code":"sh517400","full":"黄金股ETF国泰","price":1.202,"chg":4.61,"prob":39,"c5":-3.92,"pb":{"level":"small","risk":8},"nick":"黄金股"},{"code":"sh512800","full":"银行ETF华宝","price":0.916,"chg":-1.08,"prob":52,"c5":0.33,"pb":{"level":"small","risk":2},"nick":"银行ETF"},{"code":"sh515290","full":"银行ETF天弘","price":1.649,"chg":-0.9,"prob":51,"c5":0.12,"pb":{"level":"small","risk":1},"nick":"银行天弘"},{"code":"sh516210","full":"银行ETF华安","price":1.562,"chg":-0.95,"prob":56,"c5":0.45,"pb":{"level":"small","risk":2},"nick":"银行华安"}]};
+const SNAPSHOT={"t":1795424516662,"data":[{"code":"sz159855","full":"影视ETF银华","price":0.794,"chg":7.01,"prob":36,"c5":-10.18,"pb":{"level":"small","risk":15},"nick":"影视传媒"},{"code":"sh512480","full":"半导体ETF国联安","price":0.748,"chg":0.4,"prob":58,"c5":-0.13,"pb":{"level":"small","risk":6},"nick":"半导体"},{"code":"sz159915","full":"创业板ETF易方达","price":2.295,"chg":2.91,"prob":38,"c5":-1.67,"pb":{"level":"small","risk":6},"nick":"创业板大盘股"},{"code":"sh510300","full":"沪深300ETF华泰柏瑞","price":4.023,"chg":0.12,"prob":50,"c5":-0.76,"pb":{"level":"small","risk":4},"nick":"沪深300蓝筹"},{"code":"sh588000","full":"科创50ETF华夏","price":1.298,"chg":-0.15,"prob":54,"c5":1.25,"pb":{"level":"small","risk":4},"nick":"科创板龙头"},{"code":"sh512880","full":"证券ETF国泰","price":0.984,"chg":0.31,"prob":51,"c5":-0.1,"pb":{"level":"small","risk":4},"nick":"券商"},{"code":"sz159949","full":"创业板50ETF华安","price":1.018,"chg":2.93,"prob":37,"c5":-1.64,"pb":{"level":"small","risk":7},"nick":"创业板大公司"},{"code":"sh512690","full":"酒ETF鹏华","price":0.432,"chg":0.23,"prob":48,"c5":-2.7,"pb":{"level":"small","risk":5},"nick":"白酒"},{"code":"sz159992","full":"创新药ETF银华","price":0.775,"chg":3.33,"prob":39,"c5":-2.39,"pb":{"level":"small","risk":7},"nick":"创新药"},{"code":"sh512760","full":"芯片ETF国泰","price":0.808,"chg":0.25,"prob":58,"c5":0.37,"pb":{"level":"small","risk":7},"nick":"芯片"},{"code":"sz159611","full":"电力ETF广发","price":1.031,"chg":-1.43,"prob":48,"c5":-0.96,"pb":{"level":"small","risk":1},"nick":"电力"},{"code":"sh515790","full":"光伏ETF华泰柏瑞","price":0.643,"chg":1.26,"prob":34,"c5":-5.02,"pb":{"level":"small","risk":6},"nick":"光伏"},{"code":"sz159819","full":"人工智能ETF易方达","price":1.272,"chg":2.5,"prob":38,"c5":-4.22,"pb":{"level":"small","risk":7},"nick":"人工智能"},{"code":"sh515030","full":"新能源车ETF华夏","price":1.237,"chg":2.15,"prob":37,"c5":-3.06,"pb":{"level":"small","risk":6},"nick":"新能源车"},{"code":"sz159766","full":"旅游ETF富国","price":0.522,"chg":0.58,"prob":41,"c5":-3.87,"pb":{"level":"small","risk":5},"nick":"旅游"},{"code":"sh561560","full":"电力ETF华泰柏瑞","price":1.253,"chg":-1.34,"prob":53,"c5":-0.79,"pb":{"level":"small","risk":1},"nick":"机器人"},{"code":"sz159583","full":"通信ETF富国","price":0.952,"chg":5.08,"prob":30,"c5":-2.96,"pb":{"level":"small","risk":9},"nick":"通信5G"},{"code":"sh513050","full":"中概互联网ETF易方达","price":0.863,"chg":0.58,"prob":32,"c5":-8.29,"pb":{"level":"small","risk":6},"nick":"中国互联网(港股)"},{"code":"sz159792","full":"港股通互联网ETF富国","price":0.455,"chg":0.89,"prob":31,"c5":-10.61,"pb":{"level":"small","risk":7},"nick":"半导体设备"},{"code":"sh513180","full":"恒生科技ETF华夏","price":0.44,"chg":0.23,"prob":34,"c5":-7.95,"pb":{"level":"small","risk":6},"nick":"恒生科技(港股)"},{"code":"sz159509","full":"纳指科技ETF景顺","price":2.64,"chg":-1.57,"prob":35,"c5":-8.81,"pb":{"level":"small","risk":4},"nick":"数字货币概念"},{"code":"sh513500","full":"标普500ETF博时","price":2.455,"chg":-0.77,"prob":35,"c5":-5.69,"pb":{"level":"small","risk":2},"nick":"美股纳指"},{"code":"sz159680","full":"中证1000增强ETF招商","price":1.285,"chg":2.88,"prob":38,"c5":-5.1,"pb":{"level":"small","risk":7},"nick":"稀土"},{"code":"sh516160","full":"新能源ETF南方","price":1.847,"chg":1.21,"prob":36,"c5":-4.55,"pb":{"level":"small","risk":5},"nick":"新能源"},{"code":"sz159869","full":"游戏ETF华夏","price":0.913,"chg":4.34,"prob":31,"c5":-8.15,"pb":{"level":"small","risk":9},"nick":"游戏"},{"code":"sh515880","full":"通信ETF国泰","price":0.381,"chg":5.25,"prob":31,"c5":-1.04,"pb":{"level":"small","risk":10},"nick":"通信"},{"code":"sz159696","full":"纳指ETF易方达","price":1.92,"chg":-0.78,"prob":40,"c5":-5.33,"pb":{"level":"small","risk":2},"nick":"家电"},{"code":"sh512400","full":"有色金属ETF南方","price":1.282,"chg":3.22,"prob":32,"c5":-3.75,"pb":{"level":"small","risk":6},"nick":"有色金属"},{"code":"sz159649","full":"国开债ETF华安","price":110.912,"chg":0.0,"prob":63,"c5":0.16,"pb":{"level":"big","risk":16},"nick":"化工"},{"code":"sh517080","full":"沪港深500ETF汇添富","price":0.863,"chg":-0.46,"prob":34,"c5":-3.25,"pb":{"level":"small","risk":1},"nick":"地产"},{"code":"sz159822","full":"新经济ETF银华","price":0.506,"chg":0.2,"prob":37,"c5":-5.6,"pb":{"level":"small","risk":5},"nick":"化工龙头"},{"code":"sh515220","full":"煤炭ETF国泰","price":1.148,"chg":-1.12,"prob":36,"c5":-3.85,"pb":{"level":"small","risk":1},"nick":"煤炭"},{"code":"sz159551","full":"机器人ETF国泰","price":1.064,"chg":6.61,"prob":37,"c5":-1.39,"pb":{"level":"small","risk":13},"nick":"机器人产业链"},{"code":"sh560580","full":"电力ETF南方","price":1.09,"chg":-1.36,"prob":48,"c5":-0.73,"pb":{"level":"small","risk":1},"nick":"并购重组"},{"code":"sz159587","full":"粮食ETF广发","price":1.012,"chg":2.85,"prob":38,"c5":-2.5,"pb":{"level":"small","risk":6},"nick":"化工新材料"},{"code":"sh517390","full":"云计算ETF天弘","price":1.395,"chg":1.68,"prob":36,"c5":-6.12,"pb":{"level":"small","risk":7},"nick":"港股中概"},{"code":"sz159557","full":"恒生医疗ETF嘉实","price":1.26,"chg":3.28,"prob":37,"c5":-5.26,"pb":{"level":"small","risk":7},"nick":"港股医疗"},{"code":"sh561760","full":"油气ETF博时","price":1.204,"chg":-0.5,"prob":34,"c5":-2.03,"pb":{"level":"small","risk":2},"nick":"央视50"},{"code":"sz159579","full":"深主板50ETF华安","price":1.105,"chg":0.0,"prob":54,"c5":1.01,"pb":{"level":"small","risk":2},"nick":"半导体设备2"},{"code":"sh513980","full":"港股科技ETF景顺","price":0.459,"chg":0.88,"prob":34,"c5":-6.33,"pb":{"level":"small","risk":6},"nick":"石油天然气"},{"code":"sh518880","full":"黄金ETF华安","price":7.396,"chg":1.57,"prob":38,"c5":-5.81,"pb":{"level":"small","risk":6},"nick":"黄金ETF"},{"code":"sz159934","full":"黄金ETF易方达","price":7.726,"chg":1.64,"prob":38,"c5":-5.81,"pb":{"level":"small","risk":7},"nick":"黄金易方达"},{"code":"sh517400","full":"黄金股ETF国泰","price":1.202,"chg":4.61,"prob":39,"c5":-3.92,"pb":{"level":"small","risk":8},"nick":"黄金股"},{"code":"sh512800","full":"银行ETF华宝","price":0.916,"chg":-1.08,"prob":51,"c5":-0.11,"pb":{"level":"small","risk":1},"nick":"银行ETF"},{"code":"sh515290","full":"银行ETF天弘","price":1.649,"chg":-0.9,"prob":51,"c5":0.12,"pb":{"level":"small","risk":1},"nick":"银行天弘"},{"code":"sh516210","full":"银行ETF华安","price":1.562,"chg":-0.95,"prob":56,"c5":0.45,"pb":{"level":"small","risk":2},"nick":"银行华安"}]};
 
 function renderAvatar(el,av){
   if(av&&av.startsWith('data:')){el.innerHTML='<img src="'+av+'" alt="头像">'}
   else{el.textContent=av||'👤'}
-}
-function renderEmojiGrid(){
-  S('emojiGrid').innerHTML=EMOJIS.map(e=>'<span class="'+(e===avatar?'sel':'')+'" data-e="'+e+'">'+e+'</span>').join('');
-  S('emojiGrid').querySelectorAll('span').forEach(sp=>{
-    sp.onclick=()=>{avatar=sp.dataset.e;renderAvatar(S('avatarPreview'),avatar);renderEmojiGrid()};
-  });
 }
 function onAvatarFile(e){
   const f=e.target.files[0];if(!f)return;
@@ -305,7 +293,7 @@ function onAvatarFile(e){
     const c=document.createElement('canvas');c.width=c.height=128;
     c.getContext('2d').drawImage(img,0,0,128,128);
     avatar=c.toDataURL('image/jpeg',0.85);
-    renderAvatar(S('avatarPreview'),avatar);renderEmojiGrid();
+    renderAvatar(S('avatarPreview'),avatar);
     URL.revokeObjectURL(url);
   };
   img.src=url;
@@ -328,7 +316,7 @@ function enterMain(){
   S('loginView').classList.add('hidden');
   S('mainView').classList.remove('hidden');
   S('navUser').textContent=a.user||'研究员';
-  renderAvatar(S('navAvatar'),a.avatar||'🚀');
+  renderAvatar(S('navAvatar'),a.avatar||'👤');
   go();
 }
 function doLogout(){
@@ -354,24 +342,25 @@ async function quotes(){
     return {full:p[1],code:full,price:parseFloat(p[3]),chg:parseFloat(p[32])};
   }).filter(f=>f.code&&f.price>0&&!isNaN(f.chg));
 }
-async function kline(code){
-  // 唯一稳定可用端点（其他会501或无CORS）
-  const eps=[
-    'https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param=',
-    'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='
-  ];
-  for(const b of eps){
-    const ctl=new AbortController();
-    const timer=setTimeout(()=>ctl.abort(),4000);
-    try{
-      const r=await fetch(b+code+',day,,,21,qfq',{cache:'no-store',signal:ctl.signal});
-      if(!r.ok)continue;
-      const j=await r.json(),node=j.data&&j.data[code];
-      const d=(node&&(node.qfqday||node.day))||[];
-      if(d.length>=15)return d.map(k=>parseFloat(k[2]));
-    }catch(e){}finally{clearTimeout(timer)}
-  }
-  return [];
+function kline(code){
+  // 新浪JSONP（script标签绕过CORS），返回收盘价数组
+  return new Promise(resolve=>{
+    const cb='_kline_'+Math.random().toString(36).slice(2);
+    const sc=document.createElement('script');
+    const url='https://quotes.sina.cn/cn/api/jsonp_v2.php/'+cb+'/CN_MarketDataService.getKLineData?symbol='+code+'&scale=240&ma=no&datalen=21&_='+Date.now();
+    let done=false;
+    const finish=(val)=>{if(done)return;done=true;delete window[cb];sc.remove();resolve(val||[])};
+    window[cb]=(data)=>{
+      try{
+        if(data&&data.length>=15)finish(data.map(k=>parseFloat(k.close)));
+        else finish([]);
+      }catch(e){finish([])}
+    };
+    sc.src=url;
+    sc.onerror=()=>finish([]);
+    document.head.appendChild(sc);
+    setTimeout(()=>finish([]),6000); // 6秒超时
+  });
 }
 function predict(closes){
   if(closes.length<15)return null;
@@ -520,9 +509,10 @@ function renderWatch(analyzed){
       if(!f){h+='<div class="watch-row"><span class="watch-nick">'+(NICK[code]||code)+'</span><span class="watch-chg" style="color:#8892b8">--</span></div>';continue}
       const chgCls=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
       const pcls=f.prob>=60?'buy-yes':f.prob>=50?'tag-small':'buy-no';
+      const pred=f.prob>=60?'看涨':f.prob>=50?'中性':'偏弱';
       h+='<div class="watch-row"><span class="watch-nick">'+NICK[code]+'</span>'+
         '<span class="watch-chg" style="'+chgCls+'">'+pct(f.chg)+'</span>'+
-        '<span class="watch-prob '+pcls+'">'+f.prob+'%</span></div>';
+        '<span class="watch-prob '+pcls+'" title="下周'+pred+'">'+pred+' '+f.prob+'%</span></div>';
     }
     h+='</div>';
   }
@@ -586,7 +576,6 @@ const sw=document.createElement('button');sw.className='bg-switch';sw.textConten
   const ph=document.getElementById('animePhoto');if(!ph)return;
   bgIdx=(bgIdx+1)%2;ph.style.backgroundImage="url('"+(bgIdx?'anime-bg2.jpg':'anime-bg.jpg')+"')";
 };document.body.appendChild(sw);
-renderEmojiGrid();
 S('avatarFile').addEventListener('change',onAvatarFile);
 S('loginBtn').addEventListener('click',doLogin);
 S('forgotBtn').addEventListener('click',()=>{S('loginErr').style.color='#4dd4ac';S('loginErr').textContent='请联系 xhq 找回密码'});
