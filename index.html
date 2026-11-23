@@ -118,7 +118,8 @@ body::before{
 .badge{display:inline-block;font-size:9px;padding:2px 7px;border-radius:8px;margin-left:5px;vertical-align:middle}
 .buy-tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:8px;margin-top:5px;display:inline-block}
 .buy-yes{color:#4dd4ac;background:rgba(77,212,172,.16)}
-.buy-no{color:#8892b8;background:rgba(255,255,255,.08)}
+.buy-no{color:#fff;background:linear-gradient(90deg,#ff4d6d,#c9184a);box-shadow:0 3px 12px rgba(255,77,109,.4);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 3px 12px rgba(255,77,109,.4)}50%{box-shadow:0 3px 18px rgba(255,77,109,.75)}}
 .b-hot{background:rgba(255,94,126,.18);color:var(--hot)}
 /* 回调板块 */
 .pull-item{display:flex;align-items:center;gap:12px;padding:13px 4px;border-top:1px solid rgba(255,255,255,.07);animation:fade .4s ease both}
@@ -160,7 +161,7 @@ body::before{
         <label class="upload-btn">📷 上传自定义头像<input type="file" id="avatarFile" accept="image/*"></label>
 
         <div class="field"><span class="ico">👤</span><input id="userInput" placeholder="账号（随意输入）" autocomplete="off"></div>
-        <div class="field"><span class="ico">🔒</span><input id="passInput" type="password" placeholder="请输入密码"></div>
+        <div class="field"><span class="ico">🔒</span><input id="passInput" type="password" autocomplete="new-password" spellcheck="false" placeholder="请输入密码"></div>
         <button class="primary-btn" id="loginBtn">进入系统 →</button>
         <div class="err-msg" id="loginErr"></div>
         <div class="login-foot">数据实时更新 · 仅供研究参考</div>
@@ -260,7 +261,7 @@ function doLogin(){
   const u=S('userInput').value.trim(),p=S('passInput').value.trim();
   if(!avatar){S('loginErr').textContent='请先设置头像';return}
   if(!u){S('loginErr').textContent='请输入账号';return}
-  if(p!=='070408'){S('loginErr').textContent='密码错误';return}
+  if(p!=='070408'){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
   S('loginErr').textContent='';
   localStorage.setItem(AUTH_KEY,JSON.stringify({user:u,avatar:avatar}));
   enterMain();
@@ -413,9 +414,14 @@ async function fetchLive(showStatus){
     S('statFunds').textContent=analyzed.length;
     S('statUp').textContent=analyzed.filter(x=>x.prob>=60).length;
     S('statDown').textContent=analyzed.filter(x=>x.pb.level==='big').length;
-    renderTop(analyzed);
-    renderPull(analyzed);
-    S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
+    if(analyzed.length){
+      renderTop(analyzed);
+      renderPull(analyzed);
+      S('status').innerHTML='<span style="color:#4dd4ac">✓ 实时数据已更新 · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
+    }else{
+      // 实时没拿到数据，保留当前快照显示
+      S('status').innerHTML='<span style="color:#ffb457">实时数据暂不可用，显示已缓存数据</span>';
+    }
   }catch(e){
     S('status').innerHTML='<span class="err">实时同步失败，显示缓存 · '+e.message+'</span>';
   }
@@ -431,8 +437,8 @@ function renderTop(analyzed){
     const hot=f.chg>2?'<span class="badge b-hot">今日涨'+pct(f.chg)+'</span>':'';
     const pc=f.prob>=65?'p-hi':f.prob>=55?'p-mi':'p-lo';
     const v=f.prob>=70?'下周很可能涨':f.prob>=60?'下周偏涨':f.prob>=50?'涨跌各半':'暂时观望';
-    const buy=(f.prob>=60&&f.chg<4)?'推荐今日买':'别买';
-    const bc=buy==='推荐今日买'?'buy-yes':'buy-no';
+    const buy=(f.prob>=60&&f.chg<4)?'✓ 推荐今日买':'✕ 别买';
+    const bc=buy.indexOf('推荐')>=0?'buy-yes':'buy-no';
     h+='<div class="item" style="animation-delay:'+(i*40)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+hot+'</div><div class="fdesc">'+f.full+' · 今日'+pct(f.chg)+' · 近5日'+pct(f.c5)+' · '+v+'</div></div>'+
       '<div class="probbox"><div class="prob '+pc+'">'+f.prob+'%</div><div class="plabel">下周看涨概率</div>'+
