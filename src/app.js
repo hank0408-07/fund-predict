@@ -1,0 +1,1142 @@
+/* ===== 后端API配置 ===== */
+const API_CONFIG = {
+  baseUrl: '', // Cloudflare Worker地址，部署后填入
+  enabled: true,
+  // 本地回退方案
+  fallback: {
+    funds: ['https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx'],
+    market: 'local'
+  }
+};
+
+/* ===== 简单LocalStorage云同步（模拟Supabase效果）===== */
+class LocalCloud {
+  constructor() {
+    this.prefix = 'FUND_SYNC_';
+    this.deviceId = localStorage.getItem('device_id') || this.genId();
+    localStorage.setItem('device_id', this.deviceId);
+  }
+  genId() {
+    return 'dev_' + Math.random().toString(36).slice(2, 10);
+  }
+  async save(key, data) {
+    try {
+      const payload = { deviceId: this.deviceId, ts: Date.now(), data };
+      localStorage.setItem(this.prefix + key, JSON.stringify(payload));
+      // 广播到其他tab
+      broadcastChannel.postMessage({ type: 'sync', key, payload });
+    } catch (e) { console.error('Sync error:', e); }
+  }
+  async load(key) {
+    try {
+      const raw = localStorage.getItem(this.prefix + key);
+      if (!raw) return null;
+      const { data } = JSON.parse(raw);
+      return data;
+    } catch { return null; }
+  }
+}
+const sync = new LocalCloud();
+
+/* ===== 埋点系统 ===== */
+const TRACK_EVENTS = 'FUND_TRACK';
+function trackEvent(eventType, data = {}) {
+  try {
+    const events = JSON.parse(localStorage.getItem(TRACK_EVENTS) || '[]');
+    events.push({ event: eventType, data, ts: Date.now() });
+    localStorage.setItem(TRACK_EVENTS, JSON.stringify(events.slice(-100)));
+    // 发送到服务端（如果配置了API）
+    if (API_CONFIG.enabled && API_CONFIG.baseUrl) {
+      fetch(API_CONFIG.baseUrl + '/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: eventType, data, deviceId: sync.deviceId })
+      }).catch(() => {});
+    }
+  } catch (e) {}
+}
+// 自动追踪Tab切换
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) trackEvent('tab_switch', { tab: tab.dataset.tab });
+  const item = e.target.closest('[data-code]');
+  if (item) trackEvent('fund_click', { code: item.dataset.code });
+});
+
+
+/* ===== 通俗名字映射 ===== */
+const NICK={
+  "110022":"易方达消费行业股",
+  "161725":"招商中证白酒指数",
+  "003096":"中欧医疗健康",
+  "005827":"易方达蓝筹精选",
+  "260108":"景顺长城新兴成长",
+  "001156":"申万菱信新能源汽",
+  "003834":"华夏能源革新",
+  "002190":"农银新能源主题",
+  "270042":"广发纳斯达克10",
+  "161005":"富国天惠成长",
+  "163406":"兴全合润",
+  "008888":"华夏国证半导体芯",
+  "110029":"易方达科讯",
+  "340006":"兴全全球视野股票",
+  "377240":"上投摩根新兴动力",
+  "519068":"汇添富成长焦点",
+  "540003":"汇丰晋信动态策略",
+  "590002":"中邮核心成长",
+  "630002":"华商盛世成长",
+  "000001":"华夏成长",
+  "001186":"富国文体健康",
+  "001349":"富国改革动力",
+  "006751":"富国互联科技",
+  "007119":"睿远成长价值",
+  "009548":"汇添富中盘价值精",
+  "010196":"易方达核心优势",
+  "011609":"易方达科创板50",
+  "012414":"华夏中证新能源车",
+  "013308":"华夏中证光伏产业",
+  "014110":"嘉实中证稀土产业",
+  "360007":"光大优势配置",
+  "450004":"国富深化价值",
+  "481001":"工银核心价值",
+  "519133":"海富通改革驱动",
+  "660004":"农银策略价值",
+  "690001":"民生加银品牌蓝筹",
+  "710001":"富安达优势成长",
+  "730001":"东方策略成长",
+  "000003":"中海可转换债券A"
+};
+// 重点监视板块（场外基金：白酒、医疗、新能源）
+const WATCH={"黄金":["007976"],"科技":["001167"],"医疗":["000780"],"新能源":["001158"]};
+const CODES=Object.keys(NICK);
+const pct=v=>(v>0?'+':'')+v.toFixed(2)+'%';
+function dec(buf){for(const e of ['gbk','gb18030','utf-8']){try{return new TextDecoder(e).decode(buf)}catch(x){}}return ''}
+const S=(id)=>document.getElementById(id);
+
+/* ===== 登录系统 ===== */
+let avatar='';
+const AUTH_KEY='FUND_PRO_AUTH';
+const CACHE_KEY='FUND_PRO_CACHE';
+const SNAPSHOT={"t":1795441522667,"data":[{"code":"000082","full":"嘉实研究阿尔法股票A","price":1.956,"chg":0.36,"prob":45,"c5":-1.51,"pb":{"level":"small","risk":2},"nick":"嘉实研究阿尔法","sec":"综合","m3":-15.32},{"code":"000309","full":"大摩品质生活精选股票A","price":4.748,"chg":1.47,"prob":47,"c5":-0.59,"pb":{"level":"small","risk":3},"nick":"大摩品质生活精选","sec":"综合","m3":-9.15},{"code":"000326","full":"南方中小盘成长股票A","price":0.7978,"chg":3.91,"prob":36,"c5":-3.82,"pb":{"level":"small","risk":2},"nick":"南方中小盘成长","sec":"综合","m3":-23.67},{"code":"000409","full":"鹏华环保产业股票","price":3.73,"chg":0.62,"prob":46,"c5":-1.3,"pb":{"level":"small","risk":2},"nick":"鹏华环保产业","sec":"新能源","m3":-22.55},{"code":"000411","full":"景顺长城优质成长股票A","price":2.503,"chg":-2.72,"prob":24,"c5":-8.88,"pb":{"level":"small","risk":0},"nick":"景顺长城优质成长","sec":"综合","m3":-44.75},{"code":"000418","full":"景顺长城成长之星股票A","price":3.979,"chg":-0.55,"prob":45,"c5":-1.78,"pb":{"level":"small","risk":0},"nick":"景顺长城成长之星","sec":"综合","m3":-10.28},{"code":"000457","full":"摩根核心成长股票A","price":2.6017,"chg":2.47,"prob":41,"c5":-1.19,"pb":{"level":"small","risk":3},"nick":"摩根核心成长","sec":"综合","m3":-28.8},{"code":"000471","full":"富国城镇发展股票","price":2.2802,"chg":-0.51,"prob":43,"c5":-1.24,"pb":{"level":"small","risk":0},"nick":"富国城镇发展","sec":"综合","m3":-4.1},{"code":"000513","full":"富国高端制造行业股票A","price":3.351,"chg":10.19,"prob":22,"c5":-8.22,"pb":{"level":"small","risk":5},"nick":"富国高端制造行业","sec":"综合","m3":-36.58},{"code":"000524","full":"摩根民生需求股票A","price":2.382,"chg":0.18,"prob":49,"c5":0.2,"pb":{"level":"small","risk":3},"nick":"摩根民生需求","sec":"综合","m3":-25.28},{"code":"000549","full":"华安大国新经济股票A","price":3.038,"chg":1.61,"prob":42,"c5":-2.0,"pb":{"level":"small","risk":2},"nick":"华安大国新经济","sec":"综合","m3":-25.7},{"code":"000577","full":"安信价值精选股票A","price":4.4317,"chg":2.32,"prob":49,"c5":1.79,"pb":{"level":"small","risk":7},"nick":"安信价值精选","sec":"综合","m3":-21.32},{"code":"000586","full":"景顺长城中小创精选股票A","price":2.212,"chg":-3.53,"prob":24,"c5":-9.82,"pb":{"level":"small","risk":0},"nick":"景顺长城中小创精选","sec":"综合","m3":-39.69},{"code":"000592","full":"建信改革红利股票A","price":4.001,"chg":1.24,"prob":46,"c5":-2.3,"pb":{"level":"small","risk":2},"nick":"建信改革红利","sec":"综合","m3":-32.64},{"code":"000594","full":"大摩进取优选股票","price":2.826,"chg":0.14,"prob":53,"c5":-0.77,"pb":{"level":"small","risk":2},"nick":"大摩进取优选","sec":"综合","m3":-8.01},{"code":"000628","full":"大成高鑫股票A","price":4.8253,"chg":-0.03,"prob":55,"c5":-0.53,"pb":{"level":"small","risk":0},"nick":"大成高鑫","sec":"综合","m3":-5.49},{"code":"000688","full":"景顺长城研究精选股票A","price":2.279,"chg":-2.86,"prob":18,"c5":-12.85,"pb":{"level":"small","risk":0},"nick":"景顺长城研究精选","sec":"综合","m3":-40.25},{"code":"000696","full":"汇添富环保行业股票","price":1.348,"chg":1.05,"prob":39,"c5":-2.74,"pb":{"level":"small","risk":2},"nick":"汇添富环保行业","sec":"新能源","m3":-18.75},{"code":"000697","full":"汇添富移动互联股票A","price":2.592,"chg":0.5,"prob":40,"c5":-2.0,"pb":{"level":"small","risk":2},"nick":"汇添富移动互联","sec":"综合","m3":-32.71},{"code":"000711","full":"嘉实医疗保健股票","price":2.421,"chg":4.58,"prob":39,"c5":-2.93,"pb":{"level":"small","risk":4},"nick":"嘉实医疗保健","sec":"医疗","m3":-6.74},{"code":"000729","full":"建信中小盘先锋股票A","price":3.256,"chg":0.18,"prob":47,"c5":-2.02,"pb":{"level":"small","risk":2},"nick":"建信中小盘先锋","sec":"综合","m3":-5.18},{"code":"000746","full":"招商行业精选股票基金","price":5.823,"chg":-0.19,"prob":46,"c5":-1.77,"pb":{"level":"small","risk":0},"nick":"招商行业精选基金","sec":"综合","m3":-5.88},{"code":"000751","full":"嘉实新兴产业股票","price":3.789,"chg":1.39,"prob":43,"c5":-2.07,"pb":{"level":"small","risk":2},"nick":"嘉实新兴产业","sec":"综合","m3":-20.03},{"code":"000756","full":"建信潜力新蓝筹股票A","price":3.976,"chg":4.91,"prob":38,"c5":-7.34,"pb":{"level":"small","risk":2},"nick":"建信潜力新蓝筹","sec":"综合","m3":-20.81},{"code":"000761","full":"国富健康优质生活股票","price":1.126,"chg":-2.89,"prob":31,"c5":-6.26,"pb":{"level":"small","risk":0},"nick":"国富健康优质生活","sec":"医疗","m3":-15.0},{"code":"000778","full":"鹏华先进制造股票","price":3.318,"chg":-1.43,"prob":51,"c5":-0.18,"pb":{"level":"small","risk":0},"nick":"鹏华先进制造","sec":"综合","m3":0.18},{"code":"000780","full":"鹏华医疗保健股票","price":1.827,"chg":2.81,"prob":38,"c5":-2.4,"pb":{"level":"small","risk":3},"nick":"鹏华医疗保健","sec":"医疗","m3":-8.65},{"code":"000793","full":"工银高端制造股票","price":1.989,"chg":-2.45,"prob":50,"c5":-3.35,"pb":{"level":"small","risk":0},"nick":"工银高端制造","sec":"综合","m3":-22.09},{"code":"000803","full":"工银研究精选股票","price":3.513,"chg":-2.14,"prob":33,"c5":-7.36,"pb":{"level":"small","risk":0},"nick":"工银研究精选","sec":"综合","m3":-10.63},{"code":"000828","full":"宏利转型机遇股票A","price":4.798,"chg":-0.12,"prob":51,"c5":-0.83,"pb":{"level":"small","risk":0},"nick":"宏利转型机遇","sec":"综合","m3":-18.51},{"code":"000831","full":"工银医疗保健股票","price":2.733,"chg":-3.12,"prob":29,"c5":-8.17,"pb":{"level":"small","risk":0},"nick":"工银医疗保健","sec":"医疗","m3":-18.1},{"code":"000854","full":"鹏华养老产业股票","price":2.289,"chg":2.74,"prob":41,"c5":-2.01,"pb":{"level":"small","risk":3},"nick":"鹏华养老产业","sec":"综合","m3":-8.18},{"code":"000866","full":"华宝制造股票","price":2.166,"chg":2.85,"prob":35,"c5":-5.04,"pb":{"level":"small","risk":2},"nick":"华宝制造","sec":"综合","m3":-17.99},{"code":"000867","full":"华宝品质生活股票","price":1.236,"chg":-1.12,"prob":50,"c5":-1.2,"pb":{"level":"small","risk":0},"nick":"华宝品质生活","sec":"综合","m3":1.56},{"code":"000884","full":"民生加银优选股票","price":1.5337,"chg":-0.35,"prob":47,"c5":-0.92,"pb":{"level":"small","risk":0},"nick":"民生加银优选","sec":"综合","m3":-0.58},{"code":"000893","full":"工银创新动力股票","price":1.211,"chg":-0.9,"prob":47,"c5":-0.49,"pb":{"level":"small","risk":0},"nick":"工银创新动力","sec":"综合","m3":-3.27},{"code":"000913","full":"农银医疗保健股票","price":1.4331,"chg":3.45,"prob":37,"c5":-2.52,"pb":{"level":"small","risk":3},"nick":"农银医疗保健","sec":"医疗","m3":-12.82},{"code":"000925","full":"汇添富外延增长股票A","price":1.807,"chg":-0.17,"prob":35,"c5":-1.26,"pb":{"level":"small","risk":0},"nick":"汇添富外延增长","sec":"综合","m3":-13.46},{"code":"000955","full":"南方产业活力","price":1.6338,"chg":-0.83,"prob":50,"c5":-0.1,"pb":{"level":"small","risk":0},"nick":"南方产业活力","sec":"综合","m3":-0.5},{"code":"000960","full":"招商医药健康产业股票","price":2.358,"chg":6.75,"prob":38,"c5":-3.04,"pb":{"level":"small","risk":5},"nick":"招商医药健康产业","sec":"医疗","m3":-6.95},{"code":"000971","full":"诺安新经济股票A","price":1.519,"chg":1.2,"prob":43,"c5":-1.68,"pb":{"level":"small","risk":2},"nick":"诺安新经济","sec":"综合","m3":-19.76},{"code":"000974","full":"安信消费医药股票A","price":1.2212,"chg":2.11,"prob":43,"c5":-0.76,"pb":{"level":"small","risk":3},"nick":"安信消费医药","sec":"医疗","m3":-7.29},{"code":"000978","full":"景顺长城量化精选股票A","price":1.652,"chg":-3.67,"prob":34,"c5":-6.88,"pb":{"level":"small","risk":0},"nick":"景顺长城量化精选","sec":"综合","m3":-21.52},{"code":"000979","full":"景顺长城沪港深精选股票A","price":2.68,"chg":-3.11,"prob":25,"c5":-9.34,"pb":{"level":"small","risk":0},"nick":"景顺长城沪港深精选","sec":"综合","m3":-44.78},{"code":"000985","full":"嘉实逆向策略股票","price":1.649,"chg":-0.6,"prob":50,"c5":-0.78,"pb":{"level":"small","risk":0},"nick":"嘉实逆向策略","sec":"综合","m3":-0.72},{"code":"000991","full":"工银战略转型股票A","price":2.84,"chg":-2.24,"prob":32,"c5":-4.34,"pb":{"level":"small","risk":0},"nick":"工银战略转型","sec":"综合","m3":-9.84},{"code":"000996","full":"中银新动力股票A","price":0.7871,"chg":0.72,"prob":44,"c5":-2.13,"pb":{"level":"small","risk":2},"nick":"中银新动力","sec":"综合","m3":-18.38},{"code":"001008","full":"工银国企改革股票","price":2.215,"chg":-3.06,"prob":30,"c5":-7.86,"pb":{"level":"small","risk":0},"nick":"工银国企改革","sec":"综合","m3":-34.54},{"code":"001009","full":"摩根安全战略股票A","price":1.6015,"chg":0.26,"prob":44,"c5":-0.65,"pb":{"level":"small","risk":1},"nick":"摩根安全战略","sec":"综合","m3":-20.37},{"code":"001028","full":"华安物联网主题股票A","price":1.321,"chg":1.62,"prob":42,"c5":-2.8,"pb":{"level":"small","risk":2},"nick":"华安物联网主题","sec":"综合","m3":-26.08},{"code":"001036","full":"嘉实企业变革股票","price":2.226,"chg":1.0,"prob":43,"c5":-2.28,"pb":{"level":"small","risk":2},"nick":"嘉实企业变革","sec":"综合","m3":-25.2},{"code":"001039","full":"嘉实先进制造股票","price":2.433,"chg":0.79,"prob":45,"c5":-1.82,"pb":{"level":"small","risk":2},"nick":"嘉实先进制造","sec":"综合","m3":-21.57},{"code":"001040","full":"新华策略精选股票A","price":2.3512,"chg":1.37,"prob":28,"c5":-4.45,"pb":{"level":"small","risk":2},"nick":"新华策略精选","sec":"综合","m3":-35.65},{"code":"001042","full":"华夏领先股票","price":0.493,"chg":4.23,"prob":31,"c5":-3.71,"pb":{"level":"small","risk":2},"nick":"华夏领先","sec":"综合","m3":-40.1},{"code":"001043","full":"工银美丽城镇股票A","price":1.59,"chg":-1.79,"prob":53,"c5":-0.69,"pb":{"level":"small","risk":0},"nick":"工银美丽城镇","sec":"综合","m3":-9.14},{"code":"001044","full":"嘉实新消费股票A","price":2.646,"chg":-1.08,"prob":52,"c5":0.53,"pb":{"level":"small","risk":1},"nick":"嘉实新消费","sec":"消费","m3":5.04},{"code":"001047","full":"光大国企改革股票A","price":1.216,"chg":-0.49,"prob":47,"c5":-0.73,"pb":{"level":"small","risk":0},"nick":"光大国企改革","sec":"综合","m3":-21.35},{"code":"001048","full":"富国新兴产业股票A","price":3.5814,"chg":3.2,"prob":35,"c5":-1.3,"pb":{"level":"small","risk":3},"nick":"富国新兴产业","sec":"综合","m3":-38.21},{"code":"001054","full":"工银新金融股票A","price":3.112,"chg":0.45,"prob":56,"c5":1.5,"pb":{"level":"small","risk":5},"nick":"工银新金融","sec":"金融","m3":0.68},{"code":"001070","full":"建信信息产业股票A","price":3.561,"chg":6.27,"prob":34,"c5":-8.2,"pb":{"level":"small","risk":2},"nick":"建信信息产业","sec":"科技","m3":-26.04},{"code":"001072","full":"华安智能装备主题股票A","price":3.289,"chg":2.4,"prob":39,"c5":-3.18,"pb":{"level":"small","risk":2},"nick":"华安智能装备主题","sec":"科技","m3":-25.71},{"code":"001097","full":"华泰柏瑞积极优选股票A","price":1.403,"chg":-0.21,"prob":42,"c5":-0.85,"pb":{"level":"small","risk":0},"nick":"华泰柏瑞积极优选","sec":"综合","m3":-1.82},{"code":"001104","full":"华安新丝路主题股票A","price":0.829,"chg":0.12,"prob":51,"c5":-1.19,"pb":{"level":"small","risk":2},"nick":"华安新丝路主题","sec":"综合","m3":-33.52},{"code":"001105","full":"信澳转型创新股票A","price":1.447,"chg":3.28,"prob":35,"c5":-3.4,"pb":{"level":"small","risk":2},"nick":"信澳转型创新","sec":"综合","m3":-38.53},{"code":"001126","full":"摩根卓越制造股票A","price":1.244,"chg":1.62,"prob":40,"c5":-3.08,"pb":{"level":"small","risk":2},"nick":"摩根卓越制造","sec":"综合","m3":-33.66},{"code":"001158","full":"工银新材料新能源股票","price":1.529,"chg":-2.43,"prob":30,"c5":-5.15,"pb":{"level":"small","risk":0},"nick":"工银新材料新能源","sec":"新能源","m3":-24.34},{"code":"001162","full":"前海开源优势蓝筹股票A","price":2.133,"chg":-0.56,"prob":49,"c5":-0.23,"pb":{"level":"small","risk":0},"nick":"前海开源优势蓝筹","sec":"综合","m3":-2.56},{"code":"001166","full":"建信环保产业股票A","price":0.756,"chg":1.07,"prob":39,"c5":-4.18,"pb":{"level":"small","risk":2},"nick":"建信环保产业","sec":"新能源","m3":-31.71},{"code":"001167","full":"金鹰科技创新股票A","price":1.4572,"chg":3.98,"prob":32,"c5":-4.86,"pb":{"level":"small","risk":2},"nick":"金鹰科技创新","sec":"科技","m3":-15.03},{"code":"001171","full":"工银养老产业股票A","price":1.535,"chg":-2.35,"prob":40,"c5":-4.06,"pb":{"level":"small","risk":0},"nick":"工银养老产业","sec":"综合","m3":-10.02},{"code":"001178","full":"前海开源再融资股票","price":1.195,"chg":-0.25,"prob":48,"c5":-0.08,"pb":{"level":"small","risk":0},"nick":"前海开源再融资","sec":"综合","m3":-11.94},{"code":"001186","full":"富国文体健康股票A","price":2.363,"chg":0.9,"prob":54,"c5":0.51,"pb":{"level":"small","risk":4},"nick":"富国文体健康","sec":"医疗","m3":-0.96},{"code":"001188","full":"鹏华改革红利股票","price":1.786,"chg":1.94,"prob":42,"c5":-1.81,"pb":{"level":"small","risk":2},"nick":"鹏华改革红利","sec":"综合","m3":-22.45},{"code":"001193","full":"中金消费升级股票A","price":0.6604,"chg":2.74,"prob":39,"c5":-2.22,"pb":{"level":"small","risk":3},"nick":"中金消费升级","sec":"消费","m3":-15.65},{"code":"001195","full":"工银农业产业股票","price":1.043,"chg":-0.1,"prob":45,"c5":-2.52,"pb":{"level":"small","risk":0},"nick":"工银农业产业","sec":"消费","m3":5.57},{"code":"001208","full":"诺安低碳经济股票A","price":2.096,"chg":1.16,"prob":53,"c5":-0.66,"pb":{"level":"small","risk":2},"nick":"诺安低碳经济","sec":"新能源","m3":-22.05},{"code":"001223","full":"鹏华文化传媒娱乐股票","price":1.219,"chg":6.93,"prob":31,"c5":-11.22,"pb":{"level":"small","risk":6},"nick":"鹏华文化传媒娱乐","sec":"科技","m3":-13.48},{"code":"001230","full":"鹏华医药科技股票A","price":1.5839,"chg":1.49,"prob":41,"c5":-1.39,"pb":{"level":"small","risk":2},"nick":"鹏华医药科技","sec":"科技","m3":-3.67},{"code":"001236","full":"博时丝路主题股票A","price":1.313,"chg":2.18,"prob":45,"c5":-0.61,"pb":{"level":"small","risk":2},"nick":"博时丝路主题","sec":"综合","m3":-30.93},{"code":"001245","full":"工银生态环境股票A","price":2.087,"chg":-1.32,"prob":38,"c5":-2.7,"pb":{"level":"small","risk":0},"nick":"工银生态环境","sec":"综合","m3":-25.94},{"code":"001277","full":"博时国企改革股票A","price":0.6727,"chg":0.28,"prob":52,"c5":-1.1,"pb":{"level":"small","risk":2},"nick":"博时国企改革","sec":"综合","m3":-20.43},{"code":"001291","full":"大摩量化多策略股票","price":1.098,"chg":0.18,"prob":44,"c5":-0.81,"pb":{"level":"small","risk":2},"nick":"大摩量化多策略","sec":"综合","m3":-15.41},{"code":"001313","full":"摩根智慧互联股票A","price":1.2706,"chg":2.09,"prob":45,"c5":0.11,"pb":{"level":"small","risk":4},"nick":"摩根智慧互联","sec":"综合","m3":-31.3},{"code":"001319","full":"农银信息传媒股票A","price":1.0964,"chg":-0.94,"prob":54,"c5":0.05,"pb":{"level":"small","risk":0},"nick":"农银信息传媒","sec":"科技","m3":-7.52},{"code":"001396","full":"建信互联网+产业升级股票","price":1.337,"chg":1.44,"prob":38,"c5":-0.96,"pb":{"level":"small","risk":2},"nick":"建信互联网+产业升级","sec":"科技","m3":-33.58},{"code":"001404","full":"招商移动互联网产业股票基金A","price":1.788,"chg":-0.55,"prob":50,"c5":-0.1,"pb":{"level":"small","risk":0},"nick":"招商移动互联网产业基","sec":"科技","m3":-31.55},{"code":"001409","full":"工银互联网加股票","price":0.516,"chg":-2.27,"prob":29,"c5":-7.03,"pb":{"level":"small","risk":0},"nick":"工银互联网加","sec":"科技","m3":-32.19},{"code":"001410","full":"信澳新能源产业股票A","price":4.85,"chg":1.96,"prob":48,"c5":-1.48,"pb":{"level":"small","risk":2},"nick":"信澳新能源产业","sec":"新能源","m3":-26.04},{"code":"001416","full":"嘉实事件驱动股票","price":0.828,"chg":1.85,"prob":36,"c5":-0.72,"pb":{"level":"small","risk":2},"nick":"嘉实事件驱动","sec":"综合","m3":-44.98},{"code":"001421","full":"南方量化成长股票A","price":1.2583,"chg":2.66,"prob":40,"c5":-2.88,"pb":{"level":"small","risk":2},"nick":"南方量化成长","sec":"综合","m3":-23.21},{"code":"001473","full":"建信大安全战略精选股票","price":2.6901,"chg":-0.33,"prob":43,"c5":-0.9,"pb":{"level":"small","risk":0},"nick":"建信大安全战略精选","sec":"综合","m3":-8.15},{"code":"001476","full":"中银智能制造股票A","price":1.9074,"chg":2.3,"prob":40,"c5":-1.87,"pb":{"level":"small","risk":2},"nick":"中银智能制造","sec":"科技","m3":-29.54},{"code":"001482","full":"摩根新兴服务股票A","price":1.8688,"chg":0.33,"prob":49,"c5":0.41,"pb":{"level":"small","risk":3},"nick":"摩根新兴服务","sec":"综合","m3":-25.86},{"code":"001490","full":"汇添富国企创新股票A","price":1.732,"chg":-0.46,"prob":39,"c5":-0.97,"pb":{"level":"small","risk":0},"nick":"汇添富国企创新","sec":"综合","m3":-12.3},{"code":"001521","full":"国寿安保成长优选股票A","price":1.425,"chg":2.96,"prob":30,"c5":-8.36,"pb":{"level":"small","risk":2},"nick":"国寿安保成长优选","sec":"综合","m3":-35.11},{"code":"001528","full":"诺安先进制造股票A","price":3.108,"chg":-0.16,"prob":54,"c5":0.1,"pb":{"level":"small","risk":0},"nick":"诺安先进制造","sec":"综合","m3":-6.3},{"code":"001541","full":"汇添富民营新动力股票","price":1.777,"chg":2.84,"prob":36,"c5":-1.93,"pb":{"level":"small","risk":2},"nick":"汇添富民营新动力","sec":"综合","m3":-21.79},{"code":"001542","full":"国泰互联网+股票","price":1.585,"chg":0.0,"prob":35,"c5":-2.76,"pb":{"level":"small","risk":0},"nick":"国泰互联网+","sec":"科技","m3":-25.41},{"code":"001576","full":"国泰智能装备股票A","price":1.7338,"chg":2.11,"prob":46,"c5":-0.97,"pb":{"level":"small","risk":2},"nick":"国泰智能装备","sec":"科技","m3":-34.06},{"code":"001577","full":"嘉实低价策略股票","price":2.663,"chg":-0.6,"prob":50,"c5":-0.97,"pb":{"level":"small","risk":0},"nick":"嘉实低价策略","sec":"综合","m3":-1.59},{"code":"001579","full":"国泰大农业股票A","price":1.7066,"chg":0.41,"prob":47,"c5":-1.44,"pb":{"level":"small","risk":2},"nick":"国泰大农业","sec":"消费","m3":-3.39},{"code":"001583","full":"安信新常态股票A","price":1.7087,"chg":-0.88,"prob":42,"c5":-2.34,"pb":{"level":"small","risk":0},"nick":"安信新常态","sec":"综合","m3":-2.59},{"code":"001605","full":"国富沪港深成长精选股票A","price":1.8499,"chg":0.29,"prob":46,"c5":-3.2,"pb":{"level":"small","risk":2},"nick":"国富沪港深成长精选","sec":"综合","m3":-23.64},{"code":"001616","full":"嘉实环保低碳股票","price":2.211,"chg":1.61,"prob":38,"c5":-3.11,"pb":{"level":"small","risk":2},"nick":"嘉实环保低碳","sec":"新能源","m3":-23.52},{"code":"001628","full":"招商体育文化休闲股票A","price":1.568,"chg":8.21,"prob":31,"c5":-11.61,"pb":{"level":"small","risk":5},"nick":"招商体育文化休闲","sec":"综合","m3":2.22},{"code":"001637","full":"嘉实量化精选股票","price":1.4972,"chg":1.73,"prob":43,"c5":-2.08,"pb":{"level":"small","risk":2},"nick":"嘉实量化精选","sec":"综合","m3":-17.95},{"code":"001638","full":"前海开源优势蓝筹股票C","price":2.324,"chg":-0.56,"prob":49,"c5":-0.21,"pb":{"level":"small","risk":0},"nick":"前海开源优势蓝筹","sec":"综合","m3":-2.6},{"code":"001643","full":"汇丰晋信智造先锋股票A","price":1.7409,"chg":1.24,"prob":39,"c5":-4.57,"pb":{"level":"small","risk":2},"nick":"汇丰晋信智造先锋","sec":"综合","m3":-16.99},{"code":"001644","full":"汇丰晋信智造先锋股票C","price":1.6482,"chg":1.23,"prob":39,"c5":-4.57,"pb":{"level":"small","risk":2},"nick":"汇丰晋信智造先锋","sec":"综合","m3":-17.09},{"code":"001645","full":"国泰大健康股票A","price":1.991,"chg":4.73,"prob":37,"c5":-4.14,"pb":{"level":"small","risk":2},"nick":"国泰大健康","sec":"医疗","m3":-12.83},{"code":"001651","full":"工银新蓝筹股票A","price":2.562,"chg":0.12,"prob":59,"c5":0.83,"pb":{"level":"small","risk":1},"nick":"工银新蓝筹","sec":"综合","m3":-3.79},{"code":"001672","full":"国寿安保智慧生活股票A","price":1.901,"chg":4.22,"prob":32,"c5":-4.71,"pb":{"level":"small","risk":2},"nick":"国寿安保智慧生活","sec":"综合","m3":-29.44},{"code":"001677","full":"中银战略新兴产业股票A","price":3.6677,"chg":-0.05,"prob":44,"c5":-0.45,"pb":{"level":"small","risk":0},"nick":"中银战略新兴产业","sec":"综合","m3":-17.12},{"code":"001678","full":"英大国企改革A","price":1.9802,"chg":-1.11,"prob":49,"c5":-0.04,"pb":{"level":"small","risk":0},"nick":"英大国企改革A","sec":"综合","m3":-28.98},{"code":"001685","full":"汇添富沪港深新价值股票","price":0.854,"chg":2.52,"prob":30,"c5":-3.94,"pb":{"level":"small","risk":2},"nick":"汇添富沪港深新价值","sec":"综合","m3":-34.0},{"code":"001692","full":"南方国策动力","price":2.5287,"chg":-0.21,"prob":48,"c5":-1.15,"pb":{"level":"small","risk":0},"nick":"南方国策动力","sec":"综合","m3":-10.45},{"code":"001703","full":"银华沪港深增长股票A","price":1.842,"chg":-0.05,"prob":44,"c5":-1.71,"pb":{"level":"small","risk":0},"nick":"银华沪港深增长","sec":"综合","m3":-14.13},{"code":"001705","full":"泓德战略转型股票","price":1.494,"chg":0.11,"prob":55,"c5":-0.41,"pb":{"level":"small","risk":2},"nick":"泓德战略转型","sec":"综合","m3":-6.53},{"code":"001707","full":"诺安高端制造股票A","price":2.054,"chg":0.98,"prob":51,"c5":-1.49,"pb":{"level":"small","risk":2},"nick":"诺安高端制造","sec":"综合","m3":-7.81},{"code":"001714","full":"工银文体产业股票A","price":2.915,"chg":-1.09,"prob":38,"c5":-4.11,"pb":{"level":"small","risk":0},"nick":"工银文体产业","sec":"综合","m3":4.97},{"code":"001717","full":"工银前沿医疗股票A","price":2.774,"chg":-2.91,"prob":29,"c5":-7.75,"pb":{"level":"small","risk":0},"nick":"工银前沿医疗","sec":"医疗","m3":-19.71},{"code":"001718","full":"工银物流产业股票A","price":4.465,"chg":-1.59,"prob":47,"c5":-2.77,"pb":{"level":"small","risk":0},"nick":"工银物流产业","sec":"综合","m3":-10.63},{"code":"001719","full":"工银国家战略股票","price":1.879,"chg":-2.24,"prob":47,"c5":-1.98,"pb":{"level":"small","risk":0},"nick":"工银国家战略","sec":"综合","m3":-13.21},{"code":"001725","full":"汇添富高端制造股票A","price":3.083,"chg":0.16,"prob":60,"c5":0.62,"pb":{"level":"small","risk":3},"nick":"汇添富高端制造","sec":"综合","m3":-7.58},{"code":"001726","full":"汇添富新兴消费股票A","price":1.469,"chg":0.14,"prob":59,"c5":1.24,"pb":{"level":"small","risk":4},"nick":"汇添富新兴消费","sec":"消费","m3":6.06},{"code":"001736","full":"圆信永丰优加生活","price":3.2301,"chg":1.01,"prob":40,"c5":-1.97,"pb":{"level":"small","risk":2},"nick":"圆信永丰优加生活","sec":"综合","m3":-17.71},{"code":"001749","full":"招商中国机遇股票A","price":1.688,"chg":-0.24,"prob":47,"c5":0.0,"pb":{"level":"small","risk":0},"nick":"招商中国机遇","sec":"综合","m3":-36.83},{"code":"001764","full":"广发沪港深新机遇股票","price":1.052,"chg":1.35,"prob":32,"c5":-3.04,"pb":{"level":"small","risk":2},"nick":"广发沪港深新机遇","sec":"综合","m3":-33.84},{"code":"001766","full":"摩根医疗健康股票A","price":1.4536,"chg":2.04,"prob":44,"c5":-1.88,"pb":{"level":"small","risk":2},"nick":"摩根医疗健康","sec":"医疗","m3":-13.48},{"code":"001790","full":"国泰智能汽车股票A","price":1.7142,"chg":4.09,"prob":42,"c5":-1.93,"pb":{"level":"small","risk":3},"nick":"国泰智能汽车","sec":"科技","m3":-23.01},{"code":"001877","full":"宝盈国家安全沪港深股票A","price":1.8493,"chg":3.02,"prob":31,"c5":-4.25,"pb":{"level":"small","risk":2},"nick":"宝盈国家安全沪港深","sec":"综合","m3":-43.08},{"code":"001878","full":"嘉实沪港深精选股票","price":2.056,"chg":0.15,"prob":37,"c5":-4.33,"pb":{"level":"small","risk":2},"nick":"嘉实沪港深精选","sec":"综合","m3":-16.32},{"code":"001915","full":"宝盈医疗健康沪港深股票A","price":1.777,"chg":3.37,"prob":40,"c5":-2.31,"pb":{"level":"small","risk":3},"nick":"宝盈医疗健康沪港深","sec":"医疗","m3":-12.81},{"code":"001917","full":"招商量化精选股票A","price":2.9968,"chg":2.34,"prob":36,"c5":-4.38,"pb":{"level":"small","risk":2},"nick":"招商量化精选","sec":"综合","m3":-15.54},{"code":"001938","full":"中欧时代先锋股票A","price":1.6521,"chg":2.25,"prob":37,"c5":-1.44,"pb":{"level":"small","risk":3},"nick":"中欧时代先锋","sec":"综合","m3":-20.02},{"code":"001956","full":"国联安科技动力股票A","price":1.9165,"chg":4.65,"prob":27,"c5":-4.93,"pb":{"level":"small","risk":2},"nick":"国联安科技动力","sec":"科技","m3":-47.76},{"code":"001974","full":"景顺长城量化新动力股票A","price":1.805,"chg":-1.85,"prob":37,"c5":-3.68,"pb":{"level":"small","risk":0},"nick":"景顺长城量化新动力","sec":"综合","m3":-16.51},{"code":"001975","full":"景顺长城环保优势股票","price":3.393,"chg":-4.58,"prob":25,"c5":-9.9,"pb":{"level":"small","risk":0},"nick":"景顺长城环保优势","sec":"新能源","m3":-27.06},{"code":"002121","full":"广发沪港深新起点股票A","price":1.8315,"chg":0.53,"prob":34,"c5":-5.57,"pb":{"level":"small","risk":2},"nick":"广发沪港深新起点","sec":"综合","m3":-22.44},{"code":"002168","full":"嘉实智能汽车股票","price":2.07,"chg":1.22,"prob":37,"c5":-3.59,"pb":{"level":"small","risk":2},"nick":"嘉实智能汽车","sec":"科技","m3":-26.91},{"code":"002210","full":"创金合信量化多因子股票A","price":1.2396,"chg":2.81,"prob":34,"c5":-4.25,"pb":{"level":"small","risk":2},"nick":"创金合信量化多因子","sec":"综合","m3":-21.19},{"code":"002229","full":"华夏经济转型股票","price":2.348,"chg":0.6,"prob":53,"c5":0.09,"pb":{"level":"small","risk":3},"nick":"华夏经济转型","sec":"综合","m3":-26.56},{"code":"002289","full":"华商改革创新股票A","price":4.4685,"chg":-0.31,"prob":47,"c5":-1.49,"pb":{"level":"small","risk":0},"nick":"华商改革创新","sec":"综合","m3":-21.87},{"code":"002300","full":"长盛医疗量化股票A","price":1.9701,"chg":2.18,"prob":45,"c5":-1.85,"pb":{"level":"small","risk":2},"nick":"长盛医疗量化","sec":"医疗","m3":-8.25},{"code":"002332","full":"汇丰晋信沪港深A","price":1.3988,"chg":0.22,"prob":46,"c5":-3.25,"pb":{"level":"small","risk":2},"nick":"汇丰晋信沪港深A","sec":"综合","m3":-8.41},{"code":"002333","full":"汇丰晋信沪港深C","price":1.3229,"chg":0.22,"prob":46,"c5":-3.25,"pb":{"level":"small","risk":2},"nick":"汇丰晋信沪港深C","sec":"综合","m3":-8.52},{"code":"002334","full":"汇丰晋信大盘波动股票A","price":1.7598,"chg":-0.05,"prob":43,"c5":-1.17,"pb":{"level":"small","risk":0},"nick":"汇丰晋信大盘波动","sec":"综合","m3":3.36},{"code":"002335","full":"汇丰晋信大盘波动股票C","price":1.6696,"chg":-0.05,"prob":43,"c5":-1.18,"pb":{"level":"small","risk":0},"nick":"汇丰晋信大盘波动","sec":"综合","m3":3.23},{"code":"002387","full":"工银沪港深股票A","price":0.7825,"chg":0.75,"prob":38,"c5":-4.9,"pb":{"level":"small","risk":2},"nick":"工银沪港深","sec":"综合","m3":-17.21},{"code":"002556","full":"博时丝路主题股票C","price":1.258,"chg":2.11,"prob":45,"c5":-0.63,"pb":{"level":"small","risk":2},"nick":"博时丝路主题","sec":"综合","m3":-31.03},{"code":"002621","full":"中欧消费主题股票A","price":1.3495,"chg":-0.3,"prob":53,"c5":0.15,"pb":{"level":"small","risk":0},"nick":"中欧消费主题","sec":"消费","m3":7.9},{"code":"002697","full":"中欧消费主题股票C","price":1.2816,"chg":-0.3,"prob":53,"c5":0.14,"pb":{"level":"small","risk":0},"nick":"中欧消费主题","sec":"消费","m3":7.69},{"code":"002861","full":"工银智能制造股票A","price":2.382,"chg":-0.46,"prob":57,"c5":0.17,"pb":{"level":"small","risk":0},"nick":"工银智能制造","sec":"科技","m3":-29.19},{"code":"002871","full":"华夏智胜价值成长A","price":1.832,"chg":2.19,"prob":36,"c5":-3.81,"pb":{"level":"small","risk":2},"nick":"华夏智胜价值成长A","sec":"综合","m3":-18.61},{"code":"002872","full":"华夏智胜价值成长C","price":1.8007,"chg":2.18,"prob":36,"c5":-3.81,"pb":{"level":"small","risk":2},"nick":"华夏智胜价值成长C","sec":"综合","m3":-18.66},{"code":"002952","full":"建信多因子量化股票","price":1.2861,"chg":0.83,"prob":36,"c5":-3.32,"pb":{"level":"small","risk":2},"nick":"建信多因子量化","sec":"综合","m3":-22.25},{"code":"002980","full":"华夏创新前沿股票A","price":3.574,"chg":1.97,"prob":53,"c5":-0.11,"pb":{"level":"small","risk":2},"nick":"华夏创新前沿","sec":"综合","m3":-26.02},{"code":"003053","full":"嘉实文体娱乐股票A","price":2.333,"chg":0.17,"prob":42,"c5":-1.97,"pb":{"level":"small","risk":2},"nick":"嘉实文体娱乐","sec":"综合","m3":-10.72},{"code":"003054","full":"嘉实文体娱乐股票C","price":2.222,"chg":0.18,"prob":42,"c5":-1.99,"pb":{"level":"small","risk":2},"nick":"嘉实文体娱乐","sec":"综合","m3":-10.83},{"code":"003069","full":"光大创业板量化优选A","price":1.4194,"chg":2.8,"prob":38,"c5":-1.03,"pb":{"level":"small","risk":3},"nick":"光大创业板量化优选A","sec":"综合","m3":-31.62},{"code":"003070","full":"光大创业板量化优选C","price":1.2751,"chg":2.81,"prob":38,"c5":-1.05,"pb":{"level":"small","risk":3},"nick":"光大创业板量化优选C","sec":"综合","m3":-31.63},{"code":"003145","full":"国联竞争优势","price":2.8892,"chg":0.15,"prob":47,"c5":-2.85,"pb":{"level":"small","risk":2},"nick":"国联竞争优势","sec":"综合","m3":-8.25},{"code":"003190","full":"创金合信消费主题股票A","price":1.4937,"chg":1.13,"prob":49,"c5":-0.95,"pb":{"level":"small","risk":2},"nick":"创金合信消费主题","sec":"消费","m3":-1.39},{"code":"003191","full":"创金合信消费主题股票C","price":1.4087,"chg":1.13,"prob":49,"c5":-0.97,"pb":{"level":"small","risk":2},"nick":"创金合信消费主题","sec":"消费","m3":-1.57},{"code":"003230","full":"创金合信医疗保健股票A","price":1.5172,"chg":3.72,"prob":34,"c5":-4.25,"pb":{"level":"small","risk":3},"nick":"创金合信医疗保健","sec":"医疗","m3":-21.47},{"code":"003231","full":"创金合信医疗保健股票C","price":1.4399,"chg":3.71,"prob":34,"c5":-4.27,"pb":{"level":"small","risk":3},"nick":"创金合信医疗保健","sec":"医疗","m3":-21.61},{"code":"003298","full":"嘉实物流产业股票A","price":2.034,"chg":-0.1,"prob":43,"c5":-1.55,"pb":{"level":"small","risk":0},"nick":"嘉实物流产业","sec":"综合","m3":-6.09},{"code":"003299","full":"嘉实物流产业股票C","price":1.956,"chg":-0.1,"prob":43,"c5":-1.56,"pb":{"level":"small","risk":0},"nick":"嘉实物流产业","sec":"综合","m3":-6.19},{"code":"003624","full":"创金合信资源股票发起式A","price":2.9901,"chg":2.64,"prob":38,"c5":-3.7,"pb":{"level":"small","risk":2},"nick":"创金合信资源","sec":"综合","m3":-29.53},{"code":"003625","full":"创金合信资源股票发起式C","price":2.841,"chg":2.64,"prob":38,"c5":-3.71,"pb":{"level":"small","risk":2},"nick":"创金合信资源C","sec":"综合","m3":-29.62},{"code":"003634","full":"嘉实农业产业股票A","price":1.1838,"chg":1.97,"prob":45,"c5":-1.91,"pb":{"level":"small","risk":3},"nick":"嘉实农业产业","sec":"消费","m3":3.75},{"code":"003745","full":"广发多元新兴股票","price":1.6402,"chg":1.44,"prob":35,"c5":-3.28,"pb":{"level":"small","risk":2},"nick":"广发多元新兴","sec":"综合","m3":-20.9},{"code":"003834","full":"华夏能源革新股票A","price":2.232,"chg":1.78,"prob":37,"c5":-3.63,"pb":{"level":"small","risk":2},"nick":"华夏能源革新","sec":"新能源","m3":-23.85},{"code":"003853","full":"金鹰信息产业股票A","price":3.4615,"chg":0.61,"prob":44,"c5":-3.5,"pb":{"level":"small","risk":2},"nick":"金鹰信息产业","sec":"科技","m3":-37.2},{"code":"003865","full":"创金合信量化多因子股票C","price":1.1194,"chg":2.81,"prob":34,"c5":-4.26,"pb":{"level":"small","risk":2},"nick":"创金合信量化多因子","sec":"综合","m3":-21.34},{"code":"003956","full":"南方产业智选股票A","price":1.9554,"chg":-0.45,"prob":49,"c5":-0.8,"pb":{"level":"small","risk":0},"nick":"南方产业智选","sec":"综合","m3":-3.98},{"code":"000248","full":"汇添富中证主要消费ETF联接A","price":1.9295,"chg":-0.29,"prob":51,"c5":-0.79,"pb":{"level":"small","risk":0},"nick":"汇添富中证主要消费","sec":"消费","m3":6.09},{"code":"000373","full":"华安中证细分医药ETF联接A","price":1.1746,"chg":2.15,"prob":41,"c5":-1.24,"pb":{"level":"small","risk":3},"nick":"华安中证细分医药","sec":"医疗","m3":-4.65},{"code":"000376","full":"华安中证细分医药ETF联接C","price":1.1184,"chg":2.15,"prob":41,"c5":-1.25,"pb":{"level":"small","risk":3},"nick":"华安中证细分医药","sec":"医疗","m3":-4.74},{"code":"000596","full":"前海开源中证军工指数A","price":1.422,"chg":1.5,"prob":33,"c5":-5.26,"pb":{"level":"small","risk":2},"nick":"前海开源中证军工","sec":"军工","m3":-15.71},{"code":"000942","full":"广发信息技术联接A","price":1.4284,"chg":1.24,"prob":53,"c5":-0.47,"pb":{"level":"small","risk":2},"nick":"广发信息技术联接A","sec":"科技","m3":-25.36},{"code":"000948","full":"华夏沪港通恒生ETF联接A","price":1.2487,"chg":-0.08,"prob":33,"c5":-5.25,"pb":{"level":"small","risk":0},"nick":"华夏沪港通恒生","sec":"海外","m3":-12.24},{"code":"000950","full":"易方达证券保险ETF联接A","price":1.0157,"chg":-1.1,"prob":53,"c5":-0.43,"pb":{"level":"small","risk":0},"nick":"易方达证券保险","sec":"金融","m3":-4.45},{"code":"000968","full":"广发养老指数A","price":0.8069,"chg":1.79,"prob":40,"c5":-3.48,"pb":{"level":"small","risk":2},"nick":"广发养老","sec":"综合","m3":-1.88},{"code":"000975","full":"MSCI中国A股国际通联接A","price":1.3399,"chg":0.3,"prob":45,"c5":-0.9,"pb":{"level":"small","risk":2},"nick":"MSCI中国A股国际","sec":"综合","m3":-14.11},{"code":"001027","full":"前海开源中证大农业指数增强A","price":0.9141,"chg":0.1,"prob":50,"c5":-0.97,"pb":{"level":"small","risk":2},"nick":"前海开源中证大农业增","sec":"消费","m3":1.3},{"code":"001064","full":"广发中证环保ETF联接A","price":0.7112,"chg":0.57,"prob":38,"c5":-3.24,"pb":{"level":"small","risk":2},"nick":"广发中证环保","sec":"新能源","m3":-18.55},{"code":"001133","full":"广发中证全指可选消费联接A","price":0.9023,"chg":1.09,"prob":41,"c5":-1.65,"pb":{"level":"small","risk":2},"nick":"广发中证全指可选消费","sec":"消费","m3":-5.58},{"code":"001149","full":"汇丰晋信恒生龙头指数C","price":1.9238,"chg":-0.65,"prob":52,"c5":-0.28,"pb":{"level":"small","risk":0},"nick":"汇丰晋信恒生龙头","sec":"海外","m3":-8.15},{"code":"001180","full":"广发医药卫生联接A","price":0.7735,"chg":1.8,"prob":41,"c5":-1.83,"pb":{"level":"small","risk":2},"nick":"广发医药卫生联接A","sec":"医疗","m3":-3.49},{"code":"001344","full":"易方达医药ETF联接A","price":0.9346,"chg":1.4,"prob":53,"c5":-0.47,"pb":{"level":"small","risk":3},"nick":"易方达医药","sec":"医疗","m3":0.64},{"code":"001397","full":"建信精工制造指数增强","price":1.9268,"chg":1.58,"prob":40,"c5":-2.46,"pb":{"level":"small","risk":2},"nick":"建信精工制造增强","sec":"综合","m3":-23.08},{"code":"001469","full":"广发中证全指金融地产联接A","price":1.27,"chg":-0.74,"prob":54,"c5":-0.31,"pb":{"level":"small","risk":0},"nick":"广发中证全指金融地产","sec":"金融","m3":2.58},{"code":"001539","full":"嘉实中证金融地产ETF联接A","price":1.5637,"chg":-0.8,"prob":54,"c5":-0.08,"pb":{"level":"small","risk":0},"nick":"嘉实中证金融地产","sec":"金融","m3":2.99},{"code":"001552","full":"天弘中证证券保险A","price":0.9751,"chg":-0.61,"prob":52,"c5":-0.52,"pb":{"level":"small","risk":0},"nick":"天弘中证证券保险A","sec":"金融","m3":-5.76},{"code":"001553","full":"天弘中证证券保险C","price":0.9515,"chg":-0.61,"prob":52,"c5":-0.52,"pb":{"level":"small","risk":0},"nick":"天弘中证证券保险C","sec":"金融","m3":-5.81},{"code":"001592","full":"天弘创业板ETF联接A","price":0.9518,"chg":2.93,"prob":39,"c5":-1.57,"pb":{"level":"small","risk":3},"nick":"天弘创业板","sec":"综合","m3":-31.81},{"code":"001593","full":"天弘创业板ETF联接C","price":0.9267,"chg":2.93,"prob":39,"c5":-1.58,"pb":{"level":"small","risk":3},"nick":"天弘创业板","sec":"综合","m3":-31.85},{"code":"001594","full":"天弘中证银行ETF联接A","price":2.0011,"chg":-0.77,"prob":51,"c5":0.38,"pb":{"level":"small","risk":1},"nick":"天弘中证银行","sec":"金融","m3":10.69},{"code":"001595","full":"天弘中证银行ETF联接C","price":1.952,"chg":-0.78,"prob":51,"c5":0.38,"pb":{"level":"small","risk":0},"nick":"天弘中证银行","sec":"金融","m3":10.63},{"code":"001617","full":"天弘中证电子ETF联接A","price":1.7957,"chg":1.09,"prob":53,"c5":-0.22,"pb":{"level":"small","risk":2},"nick":"天弘中证电子","sec":"科技","m3":-26.46},{"code":"001618","full":"天弘中证电子ETF联接C","price":1.7518,"chg":1.08,"prob":53,"c5":-0.22,"pb":{"level":"small","risk":2},"nick":"天弘中证电子","sec":"科技","m3":-26.5},{"code":"001629","full":"天弘中证计算机ETF联接A","price":0.6455,"chg":1.72,"prob":40,"c5":-4.06,"pb":{"level":"small","risk":2},"nick":"天弘中证计算机","sec":"科技","m3":-17.73},{"code":"001630","full":"天弘中证计算机ETF联接C","price":0.6303,"chg":1.73,"prob":40,"c5":-4.05,"pb":{"level":"small","risk":2},"nick":"天弘中证计算机","sec":"科技","m3":-17.77},{"code":"001631","full":"天弘中证食品饮料ETF联接A","price":1.8807,"chg":-0.08,"prob":48,"c5":-1.64,"pb":{"level":"small","risk":0},"nick":"天弘中证食品饮料","sec":"消费","m3":1.23},{"code":"001632","full":"天弘中证食品饮料ETF联接C","price":1.8366,"chg":-0.08,"prob":48,"c5":-1.64,"pb":{"level":"small","risk":0},"nick":"天弘中证食品饮料","sec":"消费","m3":1.18},{"code":"001879","full":"长城创业板指数增强A","price":1.6768,"chg":2.97,"prob":38,"c5":-1.78,"pb":{"level":"small","risk":2},"nick":"长城创业板增强A","sec":"综合","m3":-33.85},{"code":"001899","full":"东海社会安全","price":0.442,"chg":1.84,"prob":36,"c5":-3.91,"pb":{"level":"small","risk":2},"nick":"东海社会安全","sec":"综合","m3":-12.48},{"code":"002199","full":"前海开源中证军工指数C","price":0.713,"chg":1.42,"prob":32,"c5":-5.31,"pb":{"level":"small","risk":2},"nick":"前海开源中证军工","sec":"军工","m3":-15.82},{"code":"002656","full":"南方创业板ETF联接A","price":1.2077,"chg":2.92,"prob":39,"c5":-1.6,"pb":{"level":"small","risk":3},"nick":"南方创业板","sec":"综合","m3":-31.87},{"code":"002974","full":"广发信息技术联接C","price":1.4016,"chg":1.24,"prob":53,"c5":-0.48,"pb":{"level":"small","risk":2},"nick":"广发信息技术联接C","sec":"科技","m3":-25.4},{"code":"002977","full":"广发中证全指可选消费联接C","price":0.8866,"chg":1.08,"prob":41,"c5":-1.65,"pb":{"level":"small","risk":2},"nick":"广发中证全指可选消费","sec":"消费","m3":-5.63},{"code":"002978","full":"广发医药卫生联接C","price":0.7576,"chg":1.8,"prob":41,"c5":-1.84,"pb":{"level":"small","risk":2},"nick":"广发医药卫生联接C","sec":"医疗","m3":-3.54},{"code":"002979","full":"广发中证全指金融地产联接C","price":1.2433,"chg":-0.74,"prob":54,"c5":-0.31,"pb":{"level":"small","risk":0},"nick":"广发中证全指金融地产","sec":"金融","m3":2.53},{"code":"002982","full":"广发养老指数C","price":0.7889,"chg":1.81,"prob":40,"c5":-3.47,"pb":{"level":"small","risk":2},"nick":"广发养老","sec":"综合","m3":-1.93},{"code":"002984","full":"广发中证环保ETF联接C","price":0.6953,"chg":0.56,"prob":38,"c5":-3.24,"pb":{"level":"small","risk":2},"nick":"广发中证环保","sec":"新能源","m3":-18.6},{"code":"003017","full":"广发中证军工ETF联接A","price":0.9103,"chg":1.53,"prob":33,"c5":-5.27,"pb":{"level":"small","risk":2},"nick":"广发中证军工","sec":"军工","m3":-15.63},{"code":"003194","full":"汇添富中证上海国企ETF联接A","price":0.8812,"chg":-0.44,"prob":47,"c5":-1.38,"pb":{"level":"small","risk":0},"nick":"汇添富中证上海国企","sec":"综合","m3":-3.83},{"code":"003765","full":"广发创业板ETF发起式联接A","price":1.2447,"chg":2.89,"prob":38,"c5":-2.22,"pb":{"level":"small","risk":2},"nick":"广发创业板ETF联接","sec":"综合","m3":-33.11},{"code":"003766","full":"广发创业板ETF发起式联接C","price":1.2283,"chg":2.89,"prob":38,"c5":-2.23,"pb":{"level":"small","risk":2},"nick":"广发创业板ETF联接","sec":"综合","m3":-33.15},{"code":"004069","full":"南方中证全指证券公司ETF联接A","price":1.0703,"chg":0.14,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"南方中证全指证券公司","sec":"金融","m3":-7.25},{"code":"004070","full":"南方中证全指证券公司ETF联接C","price":1.0293,"chg":0.14,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"南方中证全指证券公司","sec":"金融","m3":-7.35},{"code":"004343","full":"南方创业板ETF联接C","price":1.1857,"chg":2.92,"prob":39,"c5":-1.6,"pb":{"level":"small","risk":3},"nick":"南方创业板","sec":"综合","m3":-31.94},{"code":"004345","full":"南方深证成份ETF联接C","price":0.9528,"chg":1.84,"prob":41,"c5":-2.07,"pb":{"level":"small","risk":2},"nick":"南方深证成份","sec":"综合","m3":-22.83},{"code":"004346","full":"南方小康ETF联接C","price":1.8565,"chg":-0.8,"prob":53,"c5":-0.37,"pb":{"level":"small","risk":0},"nick":"南方小康","sec":"综合","m3":-0.37},{"code":"004432","full":"南方有色金属ETF联接A","price":1.2862,"chg":2.89,"prob":32,"c5":-3.8,"pb":{"level":"small","risk":2},"nick":"南方有色金属","sec":"周期","m3":-33.27},{"code":"004433","full":"南方有色金属ETF联接C","price":1.2372,"chg":2.89,"prob":32,"c5":-3.8,"pb":{"level":"small","risk":2},"nick":"南方有色金属","sec":"周期","m3":-33.46},{"code":"004532","full":"民生加银港股通高股息A","price":1.0992,"chg":-0.65,"prob":36,"c5":-3.84,"pb":{"level":"small","risk":0},"nick":"民生加银港股通高股息","sec":"海外","m3":-8.45},{"code":"004533","full":"民生加银港股通高股息C","price":1.0742,"chg":-0.66,"prob":36,"c5":-3.84,"pb":{"level":"small","risk":0},"nick":"民生加银港股通高股息","sec":"海外","m3":-8.5},{"code":"004597","full":"南方中证银行ETF发起联接A","price":1.5222,"chg":-0.76,"prob":51,"c5":0.41,"pb":{"level":"small","risk":1},"nick":"南方中证银行ETF发","sec":"金融","m3":6.17},{"code":"004598","full":"南方中证银行ETF发起联接C","price":1.4718,"chg":-0.76,"prob":51,"c5":0.4,"pb":{"level":"small","risk":1},"nick":"南方中证银行ETF发","sec":"金融","m3":5.92},{"code":"004642","full":"南方中证房地产ETF发起联接A","price":0.3949,"chg":0.33,"prob":32,"c5":-6.64,"pb":{"level":"small","risk":2},"nick":"南方中证房地产ETF","sec":"综合","m3":-13.63},{"code":"004643","full":"南方中证房地产ETF发起联接C","price":0.3806,"chg":0.34,"prob":32,"c5":-6.65,"pb":{"level":"small","risk":2},"nick":"南方中证房地产ETF","sec":"综合","m3":-13.72},{"code":"004743","full":"易方达上证中盘ETF联接C","price":2.2454,"chg":-0.17,"prob":47,"c5":-0.59,"pb":{"level":"small","risk":0},"nick":"易方达上证中盘","sec":"综合","m3":-7.72},{"code":"004744","full":"易方达创业板ETF联接C","price":2.3472,"chg":2.91,"prob":39,"c5":-1.62,"pb":{"level":"small","risk":3},"nick":"易方达创业板","sec":"综合","m3":-31.86},{"code":"004752","full":"广发中证传媒ETF联接A","price":0.7424,"chg":3.6,"prob":34,"c5":-7.71,"pb":{"level":"small","risk":2},"nick":"广发中证传媒","sec":"科技","m3":-6.85},{"code":"004753","full":"广发中证传媒ETF联接C","price":0.7346,"chg":3.6,"prob":34,"c5":-7.71,"pb":{"level":"small","risk":2},"nick":"广发中证传媒","sec":"科技","m3":-6.89},{"code":"004854","full":"广发中证全指汽车指数A","price":1.1566,"chg":-0.46,"prob":38,"c5":-2.07,"pb":{"level":"small","risk":0},"nick":"广发中证全指汽车","sec":"新能源","m3":-10.54},{"code":"004855","full":"广发中证全指汽车指数C","price":1.1407,"chg":-0.45,"prob":38,"c5":-2.08,"pb":{"level":"small","risk":0},"nick":"广发中证全指汽车","sec":"新能源","m3":-10.58},{"code":"004856","full":"广发中证全指建筑材料指数A","price":0.7174,"chg":0.01,"prob":36,"c5":-5.23,"pb":{"level":"small","risk":2},"nick":"广发中证全指建筑材料","sec":"周期","m3":-9.84},{"code":"004857","full":"广发中证全指建筑材料指数C","price":0.7124,"chg":0.0,"prob":31,"c5":-5.24,"pb":{"level":"small","risk":0},"nick":"广发中证全指建筑材料","sec":"周期","m3":-9.88},{"code":"004870","full":"融通创业板指数C","price":0.751,"chg":2.74,"prob":39,"c5":-1.7,"pb":{"level":"small","risk":2},"nick":"融通创业板","sec":"综合","m3":-30.78},{"code":"004875","full":"融通深证成份指数C","price":1.045,"chg":1.75,"prob":42,"c5":-1.97,"pb":{"level":"small","risk":2},"nick":"融通深证成份","sec":"综合","m3":-22.36},{"code":"004996","full":"广发恒生中型股指数C","price":0.758,"chg":0.37,"prob":36,"c5":-4.69,"pb":{"level":"small","risk":2},"nick":"广发恒生中型股","sec":"海外","m3":-19.11},{"code":"005051","full":"摩根标普港股通低波红利指数A","price":1.2442,"chg":-0.86,"prob":43,"c5":-2.44,"pb":{"level":"small","risk":0},"nick":"摩根标普港股通低波红","sec":"海外","m3":-2.15},{"code":"005052","full":"摩根标普港股通低波红利指数C","price":1.1919,"chg":-0.87,"prob":43,"c5":-2.44,"pb":{"level":"small","risk":0},"nick":"摩根标普港股通低波红","sec":"海外","m3":-2.27},{"code":"005063","full":"广发中证全指家用电器ETF联接A","price":1.4859,"chg":1.27,"prob":60,"c5":0.13,"pb":{"level":"small","risk":3},"nick":"广发中证全指家用电器","sec":"综合","m3":-2.2},{"code":"005064","full":"广发中证全指家用电器ETF联接C","price":1.4624,"chg":1.27,"prob":60,"c5":0.12,"pb":{"level":"small","risk":3},"nick":"广发中证全指家用电器","sec":"综合","m3":-2.25},{"code":"005112","full":"银华中证全指医药卫生","price":1.2044,"chg":2.69,"prob":43,"c5":-2.75,"pb":{"level":"small","risk":3},"nick":"银华中证全指医药卫生","sec":"医疗","m3":-12.0},{"code":"005125","full":"华宝标普中国A股红利机会ETF联接C","price":1.7276,"chg":-0.49,"prob":44,"c5":-1.94,"pb":{"level":"small","risk":0},"nick":"华宝标普中国A股红利","sec":"海外","m3":2.16},{"code":"005223","full":"广发中证基建工程ETF联接A","price":0.7042,"chg":-0.33,"prob":38,"c5":-2.6,"pb":{"level":"small","risk":0},"nick":"广发中证基建工程","sec":"综合","m3":-12.28},{"code":"005224","full":"广发中证基建工程ETF联接C","price":0.6936,"chg":-0.33,"prob":38,"c5":-2.61,"pb":{"level":"small","risk":0},"nick":"广发中证基建工程","sec":"综合","m3":-12.32},{"code":"005287","full":"海富通创业板增强C","price":1.2874,"chg":2.75,"prob":38,"c5":-2.88,"pb":{"level":"small","risk":2},"nick":"海富通创业板增强C","sec":"综合","m3":-27.17},{"code":"005288","full":"海富通创业板增强A","price":1.339,"chg":2.75,"prob":38,"c5":-2.87,"pb":{"level":"small","risk":2},"nick":"海富通创业板增强A","sec":"综合","m3":-27.1},{"code":"005390","full":"工银创业板ETF联接A","price":1.3332,"chg":2.93,"prob":39,"c5":-1.59,"pb":{"level":"small","risk":3},"nick":"工银创业板","sec":"综合","m3":-31.48},{"code":"005391","full":"工银创业板ETF联接C","price":1.2864,"chg":2.93,"prob":39,"c5":-1.61,"pb":{"level":"small","risk":3},"nick":"工银创业板","sec":"综合","m3":-31.54},{"code":"005554","full":"南方恒生国企ETF联接A","price":0.8025,"chg":-0.35,"prob":33,"c5":-5.34,"pb":{"level":"small","risk":0},"nick":"南方恒生国企","sec":"海外","m3":-11.36},{"code":"005555","full":"南方恒生国企ETF联接C","price":0.7749,"chg":-0.33,"prob":33,"c5":-5.34,"pb":{"level":"small","risk":0},"nick":"南方恒生国企","sec":"海外","m3":-11.43},{"code":"005561","full":"创金合信中证红利低波动指数A","price":2.2722,"chg":-1.02,"prob":54,"c5":-0.53,"pb":{"level":"small","risk":0},"nick":"创金合信中证红利低波","sec":"综合","m3":5.25},{"code":"005562","full":"创金合信中证红利低波动指数C","price":2.2342,"chg":-1.02,"prob":54,"c5":-0.54,"pb":{"level":"small","risk":0},"nick":"创金合信中证红利低波","sec":"综合","m3":5.19},{"code":"005626","full":"富国中证医药主题指数增强C","price":1.2,"chg":2.3,"prob":39,"c5":-2.44,"pb":{"level":"small","risk":2},"nick":"富国中证医药主题增强","sec":"医疗","m3":-5.96},{"code":"005627","full":"富国中证高端制造指数增强型(LOF)C","price":2.0908,"chg":2.0,"prob":47,"c5":-1.47,"pb":{"level":"small","risk":2},"nick":"富国中证高端制造增强","sec":"综合","m3":-24.52},{"code":"005659","full":"南方恒生指数ETF联接C","price":0.9762,"chg":-0.11,"prob":33,"c5":-5.45,"pb":{"level":"small","risk":0},"nick":"南方恒生","sec":"海外","m3":-12.65},{"code":"005693","full":"广发中证军工ETF联接C","price":0.8979,"chg":1.51,"prob":33,"c5":-5.27,"pb":{"level":"small","risk":2},"nick":"广发中证军工","sec":"军工","m3":-15.67},{"code":"005734","full":"华夏沪港通恒生ETF联接C","price":1.2168,"chg":-0.08,"prob":33,"c5":-5.26,"pb":{"level":"small","risk":0},"nick":"华夏沪港通恒生","sec":"海外","m3":-12.3},{"code":"005735","full":"MSCI中国A股国际通联接C","price":1.3116,"chg":0.3,"prob":45,"c5":-0.91,"pb":{"level":"small","risk":2},"nick":"MSCI中国A股国际","sec":"综合","m3":-14.17},{"code":"005761","full":"招商MSCI中国A股国际ETF联接A","price":1.4643,"chg":0.27,"prob":45,"c5":-0.93,"pb":{"level":"small","risk":2},"nick":"招商MSCI中国A股","sec":"综合","m3":-14.08},{"code":"005762","full":"招商MSCI中国A股国际ETF联接C","price":1.4025,"chg":0.27,"prob":45,"c5":-0.94,"pb":{"level":"small","risk":2},"nick":"招商MSCI中国A股","sec":"综合","m3":-14.18},{"code":"005788","full":"南方MSCI中国A股联接A","price":1.6922,"chg":0.3,"prob":45,"c5":-0.95,"pb":{"level":"small","risk":2},"nick":"南方MSCI中国A股","sec":"综合","m3":-14.16},{"code":"005789","full":"南方MSCI中国A股联接C","price":1.6357,"chg":0.3,"prob":45,"c5":-0.96,"pb":{"level":"small","risk":2},"nick":"南方MSCI中国A股","sec":"综合","m3":-14.24},{"code":"005813","full":"华安CES港股通ETF联接A","price":0.8264,"chg":0.1,"prob":37,"c5":-6.01,"pb":{"level":"small","risk":2},"nick":"华安CES港股通","sec":"海外","m3":-13.75},{"code":"005814","full":"华安CES港股通ETF联接C","price":0.8151,"chg":0.09,"prob":37,"c5":-6.01,"pb":{"level":"small","risk":2},"nick":"华安CES港股通","sec":"海外","m3":-13.83},{"code":"005829","full":"建信MSCI联接A","price":1.5126,"chg":0.25,"prob":45,"c5":-0.79,"pb":{"level":"small","risk":2},"nick":"建信MSCI联接A","sec":"综合","m3":-13.38},{"code":"005830","full":"建信MSCI联接C","price":1.4604,"chg":0.25,"prob":45,"c5":-0.79,"pb":{"level":"small","risk":2},"nick":"建信MSCI联接C","sec":"综合","m3":-13.47},{"code":"005868","full":"平安MSCI中国A股ETF联接A","price":1.4652,"chg":0.28,"prob":45,"c5":-0.98,"pb":{"level":"small","risk":2},"nick":"平安MSCI中国A股","sec":"综合","m3":-14.95},{"code":"005869","full":"平安MSCI中国A股ETF联接C","price":1.4515,"chg":0.28,"prob":45,"c5":-0.98,"pb":{"level":"small","risk":2},"nick":"平安MSCI中国A股","sec":"综合","m3":-14.97},{"code":"005873","full":"建信创业板ETF发起联接A","price":1.544,"chg":2.89,"prob":39,"c5":-1.62,"pb":{"level":"small","risk":3},"nick":"建信创业板ETF发起","sec":"综合","m3":-31.79},{"code":"005874","full":"建信创业板ETF发起联接C","price":1.5004,"chg":2.89,"prob":39,"c5":-1.63,"pb":{"level":"small","risk":3},"nick":"建信创业板ETF发起","sec":"综合","m3":-31.86},{"code":"005999","full":"嘉实中证金融地产ETF联接C","price":1.4112,"chg":-0.81,"prob":54,"c5":-0.1,"pb":{"level":"small","risk":0},"nick":"嘉实中证金融地产","sec":"金融","m3":2.88},{"code":"006034","full":"富国MSCI中国A股国际通指数增强A","price":2.3264,"chg":0.3,"prob":46,"c5":-0.72,"pb":{"level":"small","risk":2},"nick":"富国MSCI中国A股","sec":"综合","m3":-12.07},{"code":"006098","full":"华宝券商ETF联接A","price":1.3875,"chg":0.12,"prob":51,"c5":-0.2,"pb":{"level":"small","risk":1},"nick":"华宝券商","sec":"综合","m3":-7.3},{"code":"006127","full":"华宝港股通标普香港上市中国中小盘指数(LOF)C","price":1.08,"chg":0.71,"prob":37,"c5":-5.34,"pb":{"level":"small","risk":2},"nick":"华宝港股通标普香港上","sec":"海外","m3":-17.56},{"code":"006196","full":"华夏中证央企ETF联接A","price":1.4498,"chg":-0.67,"prob":51,"c5":0.15,"pb":{"level":"small","risk":0},"nick":"华夏中证央企","sec":"综合","m3":-5.78},{"code":"006197","full":"华夏中证央企ETF联接C","price":1.4153,"chg":-0.67,"prob":51,"c5":0.14,"pb":{"level":"small","risk":0},"nick":"华夏中证央企","sec":"综合","m3":-5.85},{"code":"006248","full":"华夏创业板ETF联接A","price":1.3902,"chg":2.92,"prob":39,"c5":-1.61,"pb":{"level":"small","risk":3},"nick":"华夏创业板","sec":"综合","m3":-31.79},{"code":"006249","full":"华夏创业板ETF联接C","price":1.3561,"chg":2.92,"prob":39,"c5":-1.62,"pb":{"level":"small","risk":3},"nick":"华夏创业板","sec":"综合","m3":-31.85},{"code":"006286","full":"华泰MSCI中国A股联接A","price":1.3854,"chg":0.29,"prob":45,"c5":-0.8,"pb":{"level":"small","risk":2},"nick":"华泰MSCI中国A股","sec":"综合","m3":-13.3},{"code":"006293","full":"华泰MSCI中国A股联接C","price":1.3502,"chg":0.28,"prob":45,"c5":-0.81,"pb":{"level":"small","risk":2},"nick":"华泰MSCI中国A股","sec":"综合","m3":-13.36},{"code":"006341","full":"中金MSCI质量A","price":1.8538,"chg":1.07,"prob":49,"c5":0.11,"pb":{"level":"small","risk":3},"nick":"中金MSCI质量A","sec":"综合","m3":-16.65},{"code":"006342","full":"中金MSCI质量C","price":1.8214,"chg":1.07,"prob":49,"c5":0.1,"pb":{"level":"small","risk":3},"nick":"中金MSCI质量C","sec":"综合","m3":-16.71},{"code":"006438","full":"博时央调ETF联接A","price":1.4361,"chg":-0.68,"prob":51,"c5":0.15,"pb":{"level":"small","risk":0},"nick":"博时央调","sec":"综合","m3":-5.67},{"code":"006439","full":"博时央调ETF联接C","price":1.3929,"chg":-0.69,"prob":51,"c5":0.14,"pb":{"level":"small","risk":0},"nick":"博时央调","sec":"综合","m3":-5.77},{"code":"006524","full":"前海开源MSCI中国A股指数A","price":1.3481,"chg":0.16,"prob":45,"c5":-0.77,"pb":{"level":"small","risk":2},"nick":"前海开源MSCI中国","sec":"综合","m3":-13.84},{"code":"006525","full":"前海开源MSCI中国A股指数C","price":1.3264,"chg":0.16,"prob":45,"c5":-0.78,"pb":{"level":"small","risk":2},"nick":"前海开源MSCI中国","sec":"综合","m3":-13.89},{"code":"006614","full":"嘉实港股通新经济指数C","price":0.7274,"chg":0.53,"prob":34,"c5":-7.24,"pb":{"level":"small","risk":2},"nick":"嘉实港股通新经济","sec":"海外","m3":-21.17},{"code":"006697","full":"华宝中证银行ETF联接C","price":1.7772,"chg":-0.79,"prob":51,"c5":0.34,"pb":{"level":"small","risk":0},"nick":"华宝中证银行","sec":"金融","m3":10.28},{"code":"006704","full":"易方达MSCI中国A股联接A","price":1.536,"chg":0.35,"prob":45,"c5":-0.91,"pb":{"level":"small","risk":2},"nick":"易方达MSCI中国A","sec":"综合","m3":-13.96},{"code":"006705","full":"易方达MSCI中国A股联接C","price":1.5207,"chg":0.35,"prob":45,"c5":-0.91,"pb":{"level":"small","risk":2},"nick":"易方达MSCI中国A","sec":"综合","m3":-13.98},{"code":"006712","full":"前海开源MSCI中国A股消费A","price":1.4815,"chg":-1.18,"prob":56,"c5":-0.62,"pb":{"level":"small","risk":0},"nick":"前海开源MSCI中国","sec":"消费","m3":4.66},{"code":"006713","full":"前海开源MSCI中国A股消费C","price":1.4583,"chg":-1.18,"prob":56,"c5":-0.62,"pb":{"level":"small","risk":0},"nick":"前海开源MSCI中国","sec":"消费","m3":4.61},{"code":"006724","full":"工银深证红利ETF联接C","price":0.942,"chg":0.36,"prob":47,"c5":-1.32,"pb":{"level":"small","risk":2},"nick":"工银深证红利","sec":"综合","m3":-10.21},{"code":"006733","full":"博时创业板ETF联接C","price":2.0085,"chg":2.86,"prob":39,"c5":-1.59,"pb":{"level":"small","risk":3},"nick":"博时创业板","sec":"综合","m3":-31.55},{"code":"006748","full":"富国中证价值ETF联接A","price":2.2349,"chg":0.01,"prob":48,"c5":-1.36,"pb":{"level":"small","risk":2},"nick":"富国中证价值","sec":"综合","m3":-2.19},{"code":"006756","full":"国泰中证生物医药ETF联接A","price":0.988,"chg":1.8,"prob":46,"c5":-1.19,"pb":{"level":"small","risk":3},"nick":"国泰中证生物医药","sec":"医疗","m3":-5.73},{"code":"006757","full":"国泰中证生物医药ETF联接C","price":0.9621,"chg":1.8,"prob":46,"c5":-1.2,"pb":{"level":"small","risk":3},"nick":"国泰中证生物医药","sec":"医疗","m3":-5.8},{"code":"006786","full":"泰康港股通大消费指数A","price":0.8325,"chg":0.35,"prob":39,"c5":-4.97,"pb":{"level":"small","risk":2},"nick":"泰康港股通大消费","sec":"消费","m3":-14.6},{"code":"006787","full":"泰康港股通大消费指数C","price":0.8079,"chg":0.35,"prob":39,"c5":-4.98,"pb":{"level":"small","risk":2},"nick":"泰康港股通大消费","sec":"消费","m3":-14.68},{"code":"006809","full":"泰康香港银行指数A","price":1.8882,"chg":-0.78,"prob":36,"c5":-4.86,"pb":{"level":"small","risk":0},"nick":"泰康香港银行","sec":"金融","m3":0.18},{"code":"006810","full":"泰康香港银行指数C","price":1.8428,"chg":-0.79,"prob":36,"c5":-4.87,"pb":{"level":"small","risk":0},"nick":"泰康香港银行","sec":"金融","m3":0.12},{"code":"006909","full":"华夏战略新兴成指ETF联接A","price":1.744,"chg":2.17,"prob":45,"c5":-0.18,"pb":{"level":"small","risk":3},"nick":"华夏战略新兴成指","sec":"综合","m3":-31.05},{"code":"006910","full":"华夏战略新兴成指ETF联接C","price":1.7054,"chg":2.17,"prob":45,"c5":-0.18,"pb":{"level":"small","risk":3},"nick":"华夏战略新兴成指","sec":"综合","m3":-31.1},{"code":"006928","full":"长城创业板指数增强C","price":1.6288,"chg":2.96,"prob":38,"c5":-1.79,"pb":{"level":"small","risk":2},"nick":"长城创业板增强C","sec":"综合","m3":-33.9},{"code":"007076","full":"汇添富中证医药ETF联接A","price":0.8922,"chg":1.49,"prob":41,"c5":-1.28,"pb":{"level":"small","risk":2},"nick":"汇添富中证医药","sec":"医疗","m3":-2.47},{"code":"007077","full":"汇添富中证医药ETF联接C","price":0.8654,"chg":1.49,"prob":41,"c5":-1.29,"pb":{"level":"small","risk":2},"nick":"汇添富中证医药","sec":"医疗","m3":-2.57},{"code":"007107","full":"太平MSCI香港价值增强A","price":1.341,"chg":-0.39,"prob":35,"c5":-2.63,"pb":{"level":"small","risk":0},"nick":"太平MSCI香港价值","sec":"综合","m3":-7.11},{"code":"007108","full":"太平MSCI香港价值增强C","price":1.3229,"chg":-0.39,"prob":35,"c5":-2.64,"pb":{"level":"small","risk":0},"nick":"太平MSCI香港价值","sec":"综合","m3":-7.21},{"code":"007153","full":"汇添富中证银行ETF联接A","price":1.6388,"chg":-0.79,"prob":51,"c5":0.37,"pb":{"level":"small","risk":0},"nick":"汇添富中证银行","sec":"金融","m3":10.26},{"code":"007154","full":"汇添富中证银行ETF联接C","price":1.6275,"chg":-0.79,"prob":51,"c5":0.36,"pb":{"level":"small","risk":0},"nick":"汇添富中证银行","sec":"金融","m3":10.23},{"code":"007178","full":"浙商中华预期高股息A","price":1.1421,"chg":-0.68,"prob":42,"c5":-3.11,"pb":{"level":"small","risk":0},"nick":"浙商中华预期高股息A","sec":"综合","m3":-7.15},{"code":"007191","full":"富国中证价值ETF联接C","price":2.1662,"chg":0.0,"prob":48,"c5":-1.37,"pb":{"level":"small","risk":2},"nick":"富国中证价值","sec":"综合","m3":-2.29},{"code":"007216","full":"浙商中华预期高股息C","price":1.1143,"chg":-0.69,"prob":42,"c5":-3.12,"pb":{"level":"small","risk":0},"nick":"浙商中华预期高股息C","sec":"综合","m3":-7.23},{"code":"007300","full":"国联安中证半导体ETF联接A","price":2.9584,"chg":0.32,"prob":57,"c5":-0.13,"pb":{"level":"small","risk":2},"nick":"国联安中证半导体","sec":"科技","m3":-24.52},{"code":"007301","full":"国联安中证半导体ETF联接C","price":2.8971,"chg":0.32,"prob":57,"c5":-0.13,"pb":{"level":"small","risk":2},"nick":"国联安中证半导体","sec":"科技","m3":-24.57},{"code":"007397","full":"华宝沪港深价值指数C","price":1.2831,"chg":-0.86,"prob":37,"c5":-2.68,"pb":{"level":"small","risk":0},"nick":"华宝沪港深价值","sec":"综合","m3":-0.89},{"code":"007431","full":"浙商之江凤凰联接A","price":2.3243,"chg":0.18,"prob":58,"c5":-0.61,"pb":{"level":"small","risk":2},"nick":"浙商之江凤凰联接A","sec":"综合","m3":-9.2},{"code":"007466","full":"华泰柏瑞中证红利低波ETF联接A","price":1.7118,"chg":-1.03,"prob":54,"c5":-0.46,"pb":{"level":"small","risk":0},"nick":"华泰柏瑞中证红利低波","sec":"综合","m3":4.73},{"code":"007467","full":"华泰柏瑞中证红利低波ETF联接C","price":1.6722,"chg":-1.04,"prob":54,"c5":-0.47,"pb":{"level":"small","risk":0},"nick":"华泰柏瑞中证红利低波","sec":"综合","m3":4.64},{"code":"007472","full":"华夏创业板价值ETF联接A","price":1.1748,"chg":1.9,"prob":42,"c5":-1.77,"pb":{"level":"small","risk":2},"nick":"华夏创业板价值","sec":"综合","m3":-22.87},{"code":"007473","full":"华夏创业板价值ETF联接C","price":1.1404,"chg":1.89,"prob":42,"c5":-1.78,"pb":{"level":"small","risk":2},"nick":"华夏创业板价值","sec":"综合","m3":-22.95},{"code":"007474","full":"华夏创业板成长ETF联接A","price":1.5751,"chg":3.63,"prob":36,"c5":-0.91,"pb":{"level":"small","risk":3},"nick":"华夏创业板成长","sec":"综合","m3":-39.53},{"code":"007475","full":"华夏创业板成长ETF联接C","price":1.5292,"chg":3.63,"prob":36,"c5":-0.92,"pb":{"level":"small","risk":3},"nick":"华夏创业板成长","sec":"综合","m3":-39.59},{"code":"007505","full":"华夏AH经济蓝筹股票A","price":1.326,"chg":-0.32,"prob":34,"c5":-3.24,"pb":{"level":"small","risk":0},"nick":"华夏AH经济蓝筹","sec":"综合","m3":-8.31},{"code":"007506","full":"华夏AH经济蓝筹股票C","price":1.297,"chg":-0.33,"prob":34,"c5":-3.25,"pb":{"level":"small","risk":0},"nick":"华夏AH经济蓝筹","sec":"综合","m3":-8.38},{"code":"007531","full":"华宝券商ETF联接C","price":1.3472,"chg":0.12,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"华宝券商","sec":"综合","m3":-7.4},{"code":"007657","full":"东方红中证竞争力指数A","price":1.4807,"chg":0.71,"prob":51,"c5":0.04,"pb":{"level":"small","risk":3},"nick":"东方红中证竞争力","sec":"综合","m3":-12.91},{"code":"007658","full":"东方红中证竞争力指数C","price":1.4376,"chg":0.71,"prob":51,"c5":0.03,"pb":{"level":"small","risk":3},"nick":"东方红中证竞争力","sec":"综合","m3":-12.99},{"code":"007664","full":"永赢创业板指数发起式A","price":1.285,"chg":2.93,"prob":39,"c5":-1.59,"pb":{"level":"small","risk":3},"nick":"永赢创业板","sec":"综合","m3":-31.77},{"code":"007665","full":"永赢创业板指数发起式C","price":1.2878,"chg":2.93,"prob":39,"c5":-1.58,"pb":{"level":"small","risk":3},"nick":"永赢创业板C","sec":"综合","m3":-31.79},{"code":"007671","full":"建信中证红利潜力指数A","price":1.427,"chg":-1.18,"prob":55,"c5":-0.61,"pb":{"level":"small","risk":0},"nick":"建信中证红利潜力","sec":"综合","m3":-1.55},{"code":"007672","full":"建信中证红利潜力指数C","price":1.386,"chg":-1.18,"prob":55,"c5":-0.62,"pb":{"level":"small","risk":0},"nick":"建信中证红利潜力","sec":"综合","m3":-1.65},{"code":"007751","full":"景顺长城沪港深红利成长低波指数A","price":1.2384,"chg":-0.54,"prob":43,"c5":-1.9,"pb":{"level":"small","risk":0},"nick":"景顺长城沪港深红利成","sec":"综合","m3":1.15},{"code":"007760","full":"景顺长城沪港深红利成长低波指数C","price":1.2319,"chg":-0.54,"prob":43,"c5":-1.9,"pb":{"level":"small","risk":0},"nick":"景顺长城沪港深红利成","sec":"综合","m3":1.15},{"code":"007784","full":"广发央企创新驱动ETF联接A","price":1.7107,"chg":-0.82,"prob":51,"c5":-0.44,"pb":{"level":"small","risk":0},"nick":"广发央企创新驱动","sec":"综合","m3":-2.92},{"code":"007785","full":"广发央企创新驱动ETF联接C","price":1.6985,"chg":-0.82,"prob":51,"c5":-0.45,"pb":{"level":"small","risk":0},"nick":"广发央企创新驱动","sec":"综合","m3":-2.94},{"code":"007786","full":"富国中证国企一带一路ETF联接A","price":1.4492,"chg":0.02,"prob":50,"c5":-1.26,"pb":{"level":"small","risk":2},"nick":"富国中证国企一带一路","sec":"综合","m3":-7.98},{"code":"007787","full":"富国中证国企一带一路ETF联接C","price":1.4096,"chg":0.02,"prob":50,"c5":-1.26,"pb":{"level":"small","risk":2},"nick":"富国中证国企一带一路","sec":"综合","m3":-8.06},{"code":"007788","full":"易方达中证国企带路发起式联接A","price":1.5747,"chg":0.01,"prob":50,"c5":-1.28,"pb":{"level":"small","risk":2},"nick":"易方达中证国企带路联","sec":"综合","m3":-7.93},{"code":"007789","full":"易方达中证国企带路发起式联接C","price":1.5621,"chg":0.01,"prob":49,"c5":-1.28,"pb":{"level":"small","risk":2},"nick":"易方达中证国企带路联","sec":"综合","m3":-7.95},{"code":"007792","full":"嘉实央企创新驱动ETF联接A","price":1.5776,"chg":-0.82,"prob":51,"c5":-0.45,"pb":{"level":"small","risk":0},"nick":"嘉实央企创新驱动","sec":"综合","m3":-3.04},{"code":"007793","full":"嘉实央企创新驱动ETF联接C","price":1.5557,"chg":-0.82,"prob":51,"c5":-0.45,"pb":{"level":"small","risk":0},"nick":"嘉实央企创新驱动","sec":"综合","m3":-3.08},{"code":"007796","full":"博时央创ETF联接A","price":1.6425,"chg":-0.83,"prob":51,"c5":-0.39,"pb":{"level":"small","risk":0},"nick":"博时央创","sec":"综合","m3":-2.83},{"code":"007797","full":"博时央创ETF联接C","price":1.597,"chg":-0.83,"prob":51,"c5":-0.4,"pb":{"level":"small","risk":0},"nick":"博时央创","sec":"综合","m3":-2.94},{"code":"007801","full":"大成中证红利指数C","price":2.682,"chg":-0.62,"prob":41,"c5":-1.63,"pb":{"level":"small","risk":0},"nick":"大成中证红利","sec":"综合","m3":-2.19},{"code":"007806","full":"建信MSCI中国A股指数增强A","price":1.1871,"chg":0.59,"prob":44,"c5":-0.49,"pb":{"level":"small","risk":2},"nick":"建信MSCI中国A股","sec":"综合","m3":-18.98},{"code":"007807","full":"建信MSCI中国A股指数增强C","price":1.1691,"chg":0.59,"prob":44,"c5":-0.49,"pb":{"level":"small","risk":2},"nick":"建信MSCI中国A股","sec":"综合","m3":-18.91},{"code":"007809","full":"富国中证央企创新驱动ETF联接A","price":1.6971,"chg":-0.85,"prob":51,"c5":-0.42,"pb":{"level":"small","risk":0},"nick":"富国中证央企创新驱动","sec":"综合","m3":-3.08},{"code":"007810","full":"富国中证央企创新驱动ETF联接C","price":1.6505,"chg":-0.85,"prob":51,"c5":-0.42,"pb":{"level":"small","risk":0},"nick":"富国中证央企创新驱动","sec":"综合","m3":-3.17},{"code":"007817","full":"国泰中证全指通信设备ETF联接A","price":2.2392,"chg":4.57,"prob":32,"c5":-1.0,"pb":{"level":"small","risk":5},"nick":"国泰中证全指通信设备","sec":"综合","m3":-39.27},{"code":"007818","full":"国泰中证全指通信设备ETF联接C","price":2.1891,"chg":4.56,"prob":32,"c5":-1.01,"pb":{"level":"small","risk":5},"nick":"国泰中证全指通信设备","sec":"综合","m3":-39.31},{"code":"007839","full":"汇添富中证长三角ETF联接A","price":1.1423,"chg":1.17,"prob":51,"c5":-0.3,"pb":{"level":"small","risk":2},"nick":"汇添富中证长三角","sec":"综合","m3":-12.56},{"code":"007840","full":"汇添富中证长三角ETF联接C","price":1.1213,"chg":1.16,"prob":51,"c5":-0.3,"pb":{"level":"small","risk":2},"nick":"汇添富中证长三角","sec":"综合","m3":-12.61},{"code":"007842","full":"南华中证杭州湾区ETF联接A","price":0.93,"chg":1.96,"prob":46,"c5":-1.05,"pb":{"level":"small","risk":2},"nick":"南华中证杭州湾区","sec":"综合","m3":-12.26},{"code":"007843","full":"南华中证杭州湾区ETF联接C","price":0.9057,"chg":1.96,"prob":46,"c5":-1.06,"pb":{"level":"small","risk":2},"nick":"南华中证杭州湾区","sec":"综合","m3":-12.34},{"code":"007873","full":"华宝科技ETF联接A","price":1.529,"chg":1.34,"prob":46,"c5":-0.53,"pb":{"level":"small","risk":2},"nick":"华宝科技","sec":"科技","m3":-27.38},{"code":"007874","full":"华宝科技ETF联接C","price":1.4856,"chg":1.34,"prob":46,"c5":-0.54,"pb":{"level":"small","risk":2},"nick":"华宝科技","sec":"科技","m3":-27.45},{"code":"007882","full":"易方达证券保险ETF联接C","price":1.0082,"chg":-1.1,"prob":53,"c5":-0.43,"pb":{"level":"small","risk":0},"nick":"易方达证券保险","sec":"金融","m3":-4.47},{"code":"007883","full":"易方达医药ETF联接C","price":0.9277,"chg":1.4,"prob":53,"c5":-0.47,"pb":{"level":"small","risk":3},"nick":"易方达医药","sec":"医疗","m3":0.62},{"code":"007992","full":"华夏中证全指证券公司ETF联接A","price":1.1188,"chg":0.13,"prob":51,"c5":-0.2,"pb":{"level":"small","risk":1},"nick":"华夏中证全指证券公司","sec":"金融","m3":-7.18},{"code":"007993","full":"华夏中证全指证券公司ETF联接C","price":1.0967,"chg":0.13,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"华夏中证全指证券公司","sec":"金融","m3":-7.26},{"code":"008020","full":"华富中证人工智能产业ETF联接A","price":1.1948,"chg":-4.36,"prob":27,"c5":-10.35,"pb":{"level":"small","risk":0},"nick":"华富中证人工智能产业","sec":"科技","m3":-30.12},{"code":"008021","full":"华富中证人工智能产业ETF联接C","price":1.1714,"chg":-4.36,"prob":27,"c5":-10.35,"pb":{"level":"small","risk":0},"nick":"华富中证人工智能产业","sec":"科技","m3":-30.17},{"code":"008072","full":"景顺长城创业板综指增强A","price":1.6602,"chg":-4.67,"prob":28,"c5":-10.58,"pb":{"level":"small","risk":0},"nick":"景顺长城创业板综指增","sec":"综合","m3":-30.01},{"code":"008088","full":"华夏房地产ETF联接A","price":0.4892,"chg":-4.0,"prob":26,"c5":-8.11,"pb":{"level":"small","risk":0},"nick":"华夏房地产","sec":"综合","m3":-14.91},{"code":"008089","full":"华夏房地产ETF联接C","price":0.4792,"chg":-3.99,"prob":26,"c5":-8.09,"pb":{"level":"small","risk":0},"nick":"华夏房地产","sec":"综合","m3":-14.96},{"code":"008189","full":"国泰中证钢铁ETF联接A","price":1.0236,"chg":-1.57,"prob":37,"c5":-3.27,"pb":{"level":"small","risk":0},"nick":"国泰中证钢铁","sec":"周期","m3":-12.88},{"code":"008190","full":"国泰中证钢铁ETF联接C","price":1.0021,"chg":-1.57,"prob":37,"c5":-3.27,"pb":{"level":"small","risk":0},"nick":"国泰中证钢铁","sec":"周期","m3":-12.95},{"code":"008279","full":"国泰中证煤炭ETF联接A","price":2.1804,"chg":-0.44,"prob":44,"c5":-1.06,"pb":{"level":"small","risk":0},"nick":"国泰中证煤炭","sec":"周期","m3":-8.38},{"code":"008280","full":"国泰中证煤炭ETF联接C","price":2.1375,"chg":-0.44,"prob":44,"c5":-1.07,"pb":{"level":"small","risk":0},"nick":"国泰中证煤炭","sec":"周期","m3":-8.45},{"code":"008281","full":"国泰CES半导体芯片行业ETF联接A","price":1.9149,"chg":-3.63,"prob":48,"c5":-4.94,"pb":{"level":"small","risk":0},"nick":"国泰CES半导体芯片","sec":"科技","m3":-25.39},{"code":"008282","full":"国泰CES半导体芯片行业ETF联接C","price":1.8721,"chg":-3.63,"prob":48,"c5":-4.95,"pb":{"level":"small","risk":0},"nick":"国泰CES半导体芯片","sec":"科技","m3":-25.45},{"code":"008298","full":"华夏中证银行ETF联接A","price":1.8614,"chg":1.23,"prob":58,"c5":3.02,"pb":{"level":"small","risk":8},"nick":"华夏中证银行","sec":"金融","m3":12.94},{"code":"008299","full":"华夏中证银行ETF联接C","price":1.8231,"chg":1.23,"prob":58,"c5":3.01,"pb":{"level":"small","risk":8},"nick":"华夏中证银行","sec":"金融","m3":12.86},{"code":"008326","full":"东财通信A","price":2.3704,"chg":-4.78,"prob":17,"c5":-12.2,"pb":{"level":"small","risk":0},"nick":"东财通信A","sec":"综合","m3":-46.98},{"code":"008327","full":"东财通信C","price":2.3302,"chg":-4.78,"prob":17,"c5":-12.2,"pb":{"level":"small","risk":0},"nick":"东财通信C","sec":"综合","m3":-47.01},{"code":"008399","full":"华泰柏瑞中证科技ETF联接A","price":1.8393,"chg":1.22,"prob":44,"c5":-1.69,"pb":{"level":"small","risk":2},"nick":"华泰柏瑞中证科技","sec":"科技","m3":-14.98},{"code":"008400","full":"华泰柏瑞中证科技ETF联接C","price":1.8077,"chg":1.21,"prob":44,"c5":-1.69,"pb":{"level":"small","risk":2},"nick":"华泰柏瑞中证科技","sec":"科技","m3":-15.04},{"code":"008551","full":"东财医药A","price":0.8242,"chg":-2.04,"prob":36,"c5":-2.93,"pb":{"level":"small","risk":0},"nick":"东财医药A","sec":"医疗","m3":-6.72},{"code":"008552","full":"东财医药C","price":0.8107,"chg":-2.05,"prob":36,"c5":-2.93,"pb":{"level":"small","risk":0},"nick":"东财医药C","sec":"医疗","m3":-6.78},{"code":"008585","full":"华夏人工智能ETF联接A","price":1.1915,"chg":2.59,"prob":39,"c5":-3.93,"pb":{"level":"small","risk":2},"nick":"华夏人工智能","sec":"科技","m3":-22.81},{"code":"008586","full":"华夏人工智能ETF联接C","price":1.1687,"chg":2.59,"prob":39,"c5":-3.93,"pb":{"level":"small","risk":2},"nick":"华夏人工智能","sec":"科技","m3":-22.87},{"code":"008590","full":"天弘中证全指证券公司ETF联接A","price":1.1002,"chg":0.13,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"天弘中证全指证券公司","sec":"金融","m3":-7.39},{"code":"008591","full":"天弘中证全指证券公司ETF联接C","price":1.085,"chg":0.12,"prob":51,"c5":-0.21,"pb":{"level":"small","risk":1},"nick":"天弘中证全指证券公司","sec":"金融","m3":-7.43},{"code":"008682","full":"富国中证红利指数增强C","price":0.941,"chg":-0.63,"prob":41,"c5":-1.57,"pb":{"level":"small","risk":0},"nick":"富国中证红利增强C","sec":"综合","m3":-3.29},{"code":"008713","full":"国泰中证全指家用电器ETF联接A","price":1.3643,"chg":-2.31,"prob":59,"c5":-0.91,"pb":{"level":"small","risk":0},"nick":"国泰中证全指家用电器","sec":"综合","m3":-4.57},{"code":"008714","full":"国泰中证全指家用电器ETF联接C","price":1.3375,"chg":-2.31,"prob":59,"c5":-0.92,"pb":{"level":"small","risk":0},"nick":"国泰中证全指家用电器","sec":"综合","m3":-4.64},{"code":"000006","full":"西部利得量化成长混合A","price":2.4052,"chg":1.4,"prob":33,"c5":-5.22,"pb":{"level":"small","risk":2},"nick":"西部利得量化成长","sec":"综合","m3":-17.14},{"code":"000017","full":"财通可持续混合A","price":2.007,"chg":4.15,"prob":27,"c5":1.41,"pb":{"level":"big","risk":8},"nick":"财通可持续","sec":"综合","m3":-45.96},{"code":"000020","full":"景顺长城品质投资混合A","price":4.242,"chg":-1.26,"prob":42,"c5":-2.17,"pb":{"level":"small","risk":0},"nick":"景顺长城品质投资","sec":"综合","m3":-23.36},{"code":"000021","full":"华夏优势增长混合","price":2.627,"chg":0.69,"prob":56,"c5":0.5,"pb":{"level":"small","risk":3},"nick":"华夏优势增长","sec":"综合","m3":-29.25},{"code":"000031","full":"华夏复兴混合A","price":2.614,"chg":0.65,"prob":48,"c5":-1.62,"pb":{"level":"small","risk":2},"nick":"华夏复兴","sec":"综合","m3":-4.46},{"code":"000039","full":"农银高增长混合","price":4.0586,"chg":2.67,"prob":32,"c5":-4.76,"pb":{"level":"small","risk":2},"nick":"农银高增长","sec":"综合","m3":-31.38},{"code":"000057","full":"中银消费主题混合A","price":1.1766,"chg":0.45,"prob":51,"c5":-1.84,"pb":{"level":"small","risk":2},"nick":"中银消费主题","sec":"消费","m3":-13.45},{"code":"000061","full":"华夏盛世混合","price":1.708,"chg":-0.35,"prob":40,"c5":-0.99,"pb":{"level":"small","risk":0},"nick":"华夏盛世","sec":"综合","m3":-24.79},{"code":"000066","full":"诺安鸿鑫混合A","price":2.0152,"chg":0.76,"prob":37,"c5":-0.95,"pb":{"level":"small","risk":2},"nick":"诺安鸿鑫","sec":"综合","m3":-17.05},{"code":"000083","full":"汇添富消费行业混合","price":4.488,"chg":0.02,"prob":56,"c5":-0.13,"pb":{"level":"small","risk":2},"nick":"汇添富消费行业","sec":"消费","m3":-1.82},{"code":"000117","full":"广发轮动配置混合","price":1.354,"chg":2.58,"prob":36,"c5":-5.58,"pb":{"level":"small","risk":2},"nick":"广发轮动配置","sec":"综合","m3":-24.23},{"code":"000120","full":"中银美丽中国混合A","price":1.6005,"chg":2.11,"prob":39,"c5":-3.46,"pb":{"level":"small","risk":2},"nick":"中银美丽中国","sec":"综合","m3":-25.87},{"code":"000124","full":"华宝服务优选混合","price":3.254,"chg":0.34,"prob":42,"c5":-2.19,"pb":{"level":"small","risk":2},"nick":"华宝服务优选","sec":"综合","m3":-1.57},{"code":"000127","full":"农银行业领先混合","price":2.7691,"chg":-0.71,"prob":58,"c5":0.38,"pb":{"level":"small","risk":0},"nick":"农银行业领先","sec":"金融","m3":1.05},{"code":"000166","full":"中海信息产业混合A","price":1.3694,"chg":5.02,"prob":27,"c5":-7.83,"pb":{"level":"small","risk":2},"nick":"中海信息产业","sec":"科技","m3":-33.04},{"code":"000172","full":"华泰柏瑞量化增强混合A","price":1.537,"chg":0.0,"prob":40,"c5":-0.9,"pb":{"level":"small","risk":0},"nick":"华泰柏瑞量化增强","sec":"综合","m3":-13.6},{"code":"000199","full":"国泰量化策略收益混合A","price":1.6103,"chg":1.85,"prob":34,"c5":-5.08,"pb":{"level":"small","risk":2},"nick":"国泰量化策略收益","sec":"综合","m3":-19.86},{"code":"000209","full":"中信保诚新兴产业混合A","price":1.9178,"chg":5.0,"prob":39,"c5":1.03,"pb":{"level":"small","risk":7},"nick":"中信保诚新兴产业","sec":"综合","m3":-41.05},{"code":"000220","full":"富国医疗保健行业混合A","price":2.717,"chg":5.84,"prob":37,"c5":-3.1,"pb":{"level":"small","risk":4},"nick":"富国医疗保健行业","sec":"医疗","m3":-14.88},{"code":"000251","full":"工银金融地产混合A","price":2.52,"chg":0.0,"prob":53,"c5":1.0,"pb":{"level":"small","risk":0},"nick":"工银金融地产","sec":"金融","m3":-4.76},{"code":"000263","full":"工银信息产业混合A","price":3.373,"chg":-2.29,"prob":29,"c5":-6.77,"pb":{"level":"small","risk":0},"nick":"工银信息产业","sec":"科技","m3":-33.38},{"code":"000294","full":"华安生态优先混合A","price":2.051,"chg":2.19,"prob":36,"c5":-3.3,"pb":{"level":"small","risk":2},"nick":"华安生态优先","sec":"综合","m3":-26.01},{"code":"000308","full":"建信创新中国混合","price":7.191,"chg":-0.26,"prob":51,"c5":-1.03,"pb":{"level":"small","risk":0},"nick":"建信创新中国","sec":"综合","m3":-18.36},{"code":"000327","full":"南方潜力新蓝筹混合A","price":2.0015,"chg":5.38,"prob":36,"c5":-1.24,"pb":{"level":"small","risk":5},"nick":"南方潜力新蓝筹","sec":"综合","m3":-35.21},{"code":"000339","full":"长城医疗保健混合A","price":2.5611,"chg":3.37,"prob":41,"c5":-1.2,"pb":{"level":"small","risk":4},"nick":"长城医疗保健","sec":"医疗","m3":-9.66},{"code":"000354","full":"长盛城镇化主题混合A","price":2.1175,"chg":1.36,"prob":37,"c5":-2.31,"pb":{"level":"small","risk":2},"nick":"长盛城镇化主题","sec":"综合","m3":-43.01},{"code":"000432","full":"中银优秀企业混合A","price":1.4807,"chg":2.17,"prob":28,"c5":-8.29,"pb":{"level":"small","risk":2},"nick":"中银优秀企业","sec":"综合","m3":-19.06},{"code":"000452","full":"南方医药保健混合A","price":2.4576,"chg":3.39,"prob":39,"c5":-1.59,"pb":{"level":"small","risk":3},"nick":"南方医药保健","sec":"医疗","m3":-14.13},{"code":"000522","full":"华润元大信息传媒科技混合A","price":4.4243,"chg":-2.32,"prob":32,"c5":-5.25,"pb":{"level":"small","risk":0},"nick":"华润元大信息传媒科技","sec":"科技","m3":-37.42},{"code":"000532","full":"景顺长城优势企业混合A","price":2.639,"chg":-0.71,"prob":45,"c5":-0.57,"pb":{"level":"small","risk":0},"nick":"景顺长城优势企业","sec":"综合","m3":-11.97},{"code":"000547","full":"建信健康民生混合A","price":4.705,"chg":0.19,"prob":50,"c5":-1.3,"pb":{"level":"small","risk":2},"nick":"建信健康民生","sec":"医疗","m3":-24.95},{"code":"000550","full":"广发新动力混合A","price":1.8794,"chg":12.49,"prob":38,"c5":-4.71,"pb":{"level":"big","risk":12},"nick":"广发新动力","sec":"综合","m3":6.66},{"code":"000551","full":"中信保诚幸福消费混合A","price":1.2412,"chg":0.71,"prob":41,"c5":-4.18,"pb":{"level":"small","risk":2},"nick":"中信保诚幸福消费","sec":"消费","m3":-8.53},{"code":"000589","full":"光大银发商机混合A","price":3.118,"chg":-0.1,"prob":47,"c5":-0.8,"pb":{"level":"small","risk":0},"nick":"光大银发商机","sec":"综合","m3":-6.93},{"code":"000591","full":"中银健康生活混合A","price":1.4997,"chg":4.87,"prob":31,"c5":-8.2,"pb":{"level":"small","risk":2},"nick":"中银健康生活","sec":"医疗","m3":-16.04},{"code":"000601","full":"华宝创新优选混合","price":2.46,"chg":2.46,"prob":34,"c5":-2.23,"pb":{"level":"small","risk":3},"nick":"华宝创新优选","sec":"综合","m3":-27.48},{"code":"000612","full":"华宝生态中国混合A","price":3.066,"chg":0.03,"prob":42,"c5":-5.75,"pb":{"level":"small","risk":2},"nick":"华宝生态中国","sec":"综合","m3":-29.48},{"code":"000646","full":"华润元大量化优选混合A","price":1.1927,"chg":-3.78,"prob":29,"c5":-8.97,"pb":{"level":"small","risk":0},"nick":"华润元大量化优选","sec":"综合","m3":-39.08},{"code":"000800","full":"华商未来主题混合","price":0.946,"chg":0.42,"prob":49,"c5":-1.77,"pb":{"level":"small","risk":2},"nick":"华商未来主题","sec":"综合","m3":-26.61},{"code":"000940","full":"富国中小盘精选混合A","price":5.073,"chg":3.17,"prob":40,"c5":-4.14,"pb":{"level":"small","risk":2},"nick":"富国中小盘精选","sec":"综合","m3":-22.21},{"code":"000965","full":"汇丰晋信新动力混合A","price":2.0471,"chg":0.36,"prob":51,"c5":-1.05,"pb":{"level":"small","risk":2},"nick":"汇丰晋信新动力","sec":"综合","m3":-6.4},{"code":"001000","full":"中欧明睿新起点混合A","price":1.2165,"chg":4.03,"prob":27,"c5":-3.27,"pb":{"level":"small","risk":2},"nick":"中欧明睿新起点","sec":"综合","m3":-39.15},{"code":"001076","full":"易方达改革红利混合","price":3.129,"chg":0.84,"prob":38,"c5":-1.88,"pb":{"level":"small","risk":2},"nick":"易方达改革红利","sec":"综合","m3":-22.32},{"code":"001088","full":"华宝国策导向混合A","price":1.118,"chg":3.04,"prob":38,"c5":-0.8,"pb":{"level":"small","risk":5},"nick":"华宝国策导向","sec":"综合","m3":-26.54},{"code":"001118","full":"华宝事件驱动混合A","price":0.711,"chg":0.0,"prob":38,"c5":-5.45,"pb":{"level":"small","risk":0},"nick":"华宝事件驱动","sec":"综合","m3":-27.89},{"code":"001256","full":"泓德优选成长混合","price":1.3493,"chg":1.25,"prob":44,"c5":-2.15,"pb":{"level":"small","risk":2},"nick":"泓德优选成长","sec":"综合","m3":-10.79},{"code":"001267","full":"宏利蓝筹混合","price":1.586,"chg":-0.69,"prob":51,"c5":0.95,"pb":{"level":"small","risk":1},"nick":"宏利蓝筹","sec":"综合","m3":-25.75},{"code":"001268","full":"富国国家安全主题混合A","price":0.626,"chg":2.29,"prob":42,"c5":-1.11,"pb":{"level":"small","risk":2},"nick":"富国国家安全主题","sec":"综合","m3":-34.31},{"code":"001306","full":"中欧永裕混合A","price":1.3012,"chg":-0.9,"prob":47,"c5":-2.14,"pb":{"level":"small","risk":0},"nick":"中欧永裕","sec":"综合","m3":-0.25},{"code":"001307","full":"中欧永裕混合C","price":1.1878,"chg":-0.9,"prob":46,"c5":-2.16,"pb":{"level":"small","risk":0},"nick":"中欧永裕","sec":"综合","m3":-0.44},{"code":"001349","full":"富国改革动力混合","price":0.609,"chg":-0.98,"prob":53,"c5":-0.49,"pb":{"level":"small","risk":0},"nick":"富国改革动力","sec":"综合","m3":-7.31},{"code":"001382","full":"易方达国企改革混合","price":2.062,"chg":-0.15,"prob":40,"c5":-1.43,"pb":{"level":"small","risk":0},"nick":"易方达国企改革","sec":"综合","m3":-6.95},{"code":"001403","full":"招商国企改革主题混合基金","price":1.07,"chg":-0.37,"prob":35,"c5":-2.19,"pb":{"level":"small","risk":0},"nick":"招商国企改革主题基金","sec":"综合","m3":-8.0},{"code":"001463","full":"光大一带一路混合A","price":0.987,"chg":0.82,"prob":51,"c5":0.3,"pb":{"level":"small","risk":3},"nick":"光大一带一路","sec":"综合","m3":-11.8},{"code":"001475","full":"易方达国防军工混合A","price":1.796,"chg":-0.72,"prob":49,"c5":-2.39,"pb":{"level":"small","risk":0},"nick":"易方达国防军工","sec":"军工","m3":-16.74},{"code":"001513","full":"易方达信息产业混合A","price":5.194,"chg":1.09,"prob":38,"c5":-2.09,"pb":{"level":"small","risk":2},"nick":"易方达信息产业","sec":"科技","m3":-34.43},{"code":"001558","full":"天弘医疗健康混合A","price":1.6839,"chg":0.83,"prob":46,"c5":-1.74,"pb":{"level":"small","risk":2},"nick":"天弘医疗健康","sec":"医疗","m3":-4.82},{"code":"001559","full":"天弘医疗健康混合C","price":1.6146,"chg":0.82,"prob":46,"c5":-1.75,"pb":{"level":"small","risk":2},"nick":"天弘医疗健康","sec":"医疗","m3":-4.91},{"code":"001723","full":"华商新动力混合A","price":1.4259,"chg":-0.52,"prob":54,"c5":-1.22,"pb":{"level":"small","risk":0},"nick":"华商新动力","sec":"综合","m3":-23.56},{"code":"001734","full":"广发新锐智选混合A","price":1.4876,"chg":2.31,"prob":28,"c5":-11.1,"pb":{"level":"small","risk":2},"nick":"广发新锐智选","sec":"综合","m3":-17.19},{"code":"001735","full":"广发新锐智选混合E","price":1.4892,"chg":2.31,"prob":28,"c5":-11.1,"pb":{"level":"small","risk":2},"nick":"广发新锐智选E","sec":"综合","m3":-17.19},{"code":"001811","full":"中欧明睿新常态混合A","price":2.3258,"chg":1.89,"prob":44,"c5":-0.26,"pb":{"level":"small","risk":3},"nick":"中欧明睿新常态","sec":"综合","m3":-37.53},{"code":"001881","full":"中欧新趋势混合E","price":1.4693,"chg":1.4,"prob":38,"c5":-1.28,"pb":{"level":"small","risk":3},"nick":"中欧新趋势E","sec":"综合","m3":-17.07},{"code":"001882","full":"中欧价值发现混合E","price":3.4808,"chg":-0.09,"prob":49,"c5":-0.8,"pb":{"level":"small","risk":0},"nick":"中欧价值发现E","sec":"综合","m3":-4.97},{"code":"001883","full":"中欧新动力混合(LOF)E","price":2.9283,"chg":0.95,"prob":39,"c5":-2.04,"pb":{"level":"small","risk":2},"nick":"中欧新动力()E","sec":"综合","m3":-16.45},{"code":"001884","full":"中欧互通精选混合E","price":2.0477,"chg":0.03,"prob":38,"c5":-4.06,"pb":{"level":"small","risk":2},"nick":"中欧互通精选E","sec":"综合","m3":-4.23},{"code":"001885","full":"中欧新蓝筹混合E","price":2.6196,"chg":2.01,"prob":37,"c5":-1.06,"pb":{"level":"small","risk":4},"nick":"中欧新蓝筹E","sec":"综合","m3":-18.91},{"code":"001886","full":"中欧行业成长混合(LOF)E","price":2.1621,"chg":1.57,"prob":46,"c5":-1.27,"pb":{"level":"small","risk":3},"nick":"中欧行业成长()E","sec":"综合","m3":-11.46},{"code":"001888","full":"中欧盛世成长混合(LOF)E","price":1.8648,"chg":11.61,"prob":34,"c5":-8.09,"pb":{"level":"small","risk":7},"nick":"中欧盛世成长()E","sec":"综合","m3":5.09},{"code":"001900","full":"诺安精选价值混合A","price":1.3139,"chg":3.36,"prob":37,"c5":-4.6,"pb":{"level":"small","risk":2},"nick":"诺安精选价值","sec":"综合","m3":-18.7},{"code":"001955","full":"中欧养老产业混合A","price":2.9422,"chg":0.13,"prob":55,"c5":-0.99,"pb":{"level":"small","risk":2},"nick":"中欧养老产业","sec":"综合","m3":0.65},{"code":"001980","full":"中欧量化驱动混合A","price":1.229,"chg":1.09,"prob":41,"c5":-2.59,"pb":{"level":"small","risk":2},"nick":"中欧量化驱动","sec":"综合","m3":-20.57},{"code":"001985","full":"富国低碳新经济混合A","price":2.777,"chg":2.78,"prob":35,"c5":-2.32,"pb":{"level":"small","risk":2},"nick":"富国低碳新经济","sec":"新能源","m3":-34.35},{"code":"002271","full":"招商晟元价值驱动混合A","price":0.7851,"chg":0.15,"prob":42,"c5":-2.44,"pb":{"level":"small","risk":2},"nick":"招商晟元价值驱动","sec":"综合","m3":-27.35},{"code":"002305","full":"光大风格轮动混合A","price":1.488,"chg":2.55,"prob":41,"c5":-3.75,"pb":{"level":"small","risk":2},"nick":"光大风格轮动","sec":"综合","m3":-19.7},{"code":"002340","full":"富国价值优势混合A","price":2.8932,"chg":0.77,"prob":43,"c5":-2.42,"pb":{"level":"small","risk":2},"nick":"富国价值优势","sec":"综合","m3":-17.07},{"code":"002419","full":"汇添富创新活力混合A","price":2.0591,"chg":0.48,"prob":38,"c5":-3.05,"pb":{"level":"small","risk":2},"nick":"汇添富创新活力","sec":"综合","m3":-13.72},{"code":"002553","full":"博时创业成长混合C","price":1.984,"chg":1.28,"prob":46,"c5":-1.15,"pb":{"level":"small","risk":2},"nick":"博时创业成长","sec":"综合","m3":-30.65},{"code":"002562","full":"泓德泓益量化混合A","price":1.3553,"chg":0.3,"prob":44,"c5":-1.3,"pb":{"level":"small","risk":2},"nick":"泓德泓益量化","sec":"综合","m3":-14.64},{"code":"002593","full":"富国美丽中国混合A","price":1.902,"chg":0.05,"prob":42,"c5":-2.01,"pb":{"level":"small","risk":2},"nick":"富国美丽中国","sec":"综合","m3":-23.34},{"code":"002598","full":"平安消费精选混合A","price":0.9273,"chg":0.26,"prob":55,"c5":-0.8,"pb":{"level":"small","risk":2},"nick":"平安消费精选","sec":"消费","m3":-1.98},{"code":"002599","full":"平安消费精选混合C","price":0.8886,"chg":0.25,"prob":55,"c5":-0.81,"pb":{"level":"small","risk":2},"nick":"平安消费精选","sec":"消费","m3":-2.13},{"code":"002692","full":"富国创新科技混合A","price":2.399,"chg":4.62,"prob":35,"c5":1.14,"pb":{"level":"small","risk":7},"nick":"富国创新科技","sec":"科技","m3":-44.63},{"code":"002708","full":"大摩健康产业混合A","price":1.749,"chg":5.11,"prob":40,"c5":-1.63,"pb":{"level":"small","risk":5},"nick":"大摩健康产业","sec":"医疗","m3":-8.67},{"code":"002802","full":"广发成长智选混合A","price":0.9834,"chg":4.3,"prob":37,"c5":-3.94,"pb":{"level":"small","risk":2},"nick":"广发成长智选","sec":"综合","m3":-27.66},{"code":"003032","full":"平安医疗健康混合A","price":1.9412,"chg":2.79,"prob":44,"c5":-2.7,"pb":{"level":"small","risk":2},"nick":"平安医疗健康","sec":"医疗","m3":-16.83},{"code":"003095","full":"中欧医疗健康混合A","price":1.7914,"chg":3.26,"prob":46,"c5":-0.98,"pb":{"level":"small","risk":4},"nick":"中欧医疗健康","sec":"医疗","m3":-7.86},{"code":"003096","full":"中欧医疗健康混合C","price":1.6968,"chg":3.26,"prob":46,"c5":-1.0,"pb":{"level":"small","risk":4},"nick":"中欧医疗健康","sec":"医疗","m3":-8.05},{"code":"003284","full":"中邮医药健康混合A","price":2.0075,"chg":2.76,"prob":44,"c5":-1.64,"pb":{"level":"small","risk":3},"nick":"中邮医药健康","sec":"医疗","m3":-13.96},{"code":"003494","full":"富国天惠成长混合(LOF)C","price":2.3306,"chg":1.24,"prob":37,"c5":-2.33,"pb":{"level":"small","risk":2},"nick":"富国天惠成长()C","sec":"综合","m3":-22.12},{"code":"003567","full":"华夏行业景气混合A","price":4.2429,"chg":3.11,"prob":28,"c5":-5.53,"pb":{"level":"small","risk":2},"nick":"华夏行业景气","sec":"综合","m3":-30.34},{"code":"003751","full":"万家瑞隆混合A","price":1.3492,"chg":2.6,"prob":38,"c5":-1.99,"pb":{"level":"small","risk":2},"nick":"万家瑞隆","sec":"综合","m3":-32.57},{"code":"003822","full":"中信建投轮换混合A","price":2.9507,"chg":2.48,"prob":38,"c5":-2.83,"pb":{"level":"small","risk":2},"nick":"中信建投轮换","sec":"综合","m3":-12.4},{"code":"003823","full":"中信建投轮换混合C","price":2.8593,"chg":2.48,"prob":38,"c5":-2.83,"pb":{"level":"small","risk":2},"nick":"中信建投轮换","sec":"综合","m3":-12.49},{"code":"004076","full":"国联安锐意成长混合","price":1.742,"chg":-0.82,"prob":47,"c5":0.58,"pb":{"level":"small","risk":1},"nick":"国联安锐意成长","sec":"综合","m3":8.64},{"code":"004148","full":"圆信永丰多策略","price":2.3449,"chg":1.63,"prob":52,"c5":-0.66,"pb":{"level":"small","risk":2},"nick":"圆信永丰多策略","sec":"综合","m3":-21.27},{"code":"004183","full":"富国产业升级混合A","price":2.6834,"chg":0.59,"prob":38,"c5":-1.97,"pb":{"level":"small","risk":2},"nick":"富国产业升级","sec":"综合","m3":-22.31},{"code":"004221","full":"长信量化先锋混合C","price":1.478,"chg":2.35,"prob":42,"c5":-1.92,"pb":{"level":"small","risk":2},"nick":"长信量化先锋","sec":"综合","m3":-18.52},{"code":"004231","full":"中欧行业成长混合(LOF)C","price":2.0034,"chg":1.57,"prob":46,"c5":-1.29,"pb":{"level":"small","risk":3},"nick":"中欧行业成长()C","sec":"综合","m3":-11.64},{"code":"004232","full":"中欧价值发现混合C","price":2.9185,"chg":-0.1,"prob":49,"c5":-0.82,"pb":{"level":"small","risk":0},"nick":"中欧价值发现","sec":"综合","m3":-5.16},{"code":"004233","full":"中欧盛世成长混合(LOF)C","price":1.7326,"chg":11.6,"prob":34,"c5":-8.11,"pb":{"level":"small","risk":7},"nick":"中欧盛世成长()C","sec":"综合","m3":4.88},{"code":"004236","full":"中欧新动力混合(LOF)C","price":2.7294,"chg":0.95,"prob":39,"c5":-2.05,"pb":{"level":"small","risk":2},"nick":"中欧新动力()C","sec":"综合","m3":-16.62},{"code":"004237","full":"中欧新蓝筹混合C","price":2.4538,"chg":2.0,"prob":37,"c5":-1.08,"pb":{"level":"small","risk":3},"nick":"中欧新蓝筹","sec":"综合","m3":-19.07},{"code":"004250","full":"银河量化优选混合A","price":2.038,"chg":1.97,"prob":34,"c5":-3.41,"pb":{"level":"small","risk":2},"nick":"银河量化优选","sec":"综合","m3":-20.74},{"code":"004332","full":"恒生沪港深新兴产业精选混合","price":1.3559,"chg":3.29,"prob":36,"c5":-3.66,"pb":{"level":"small","risk":2},"nick":"恒生沪港深新兴产业精","sec":"海外","m3":-18.55},{"code":"004351","full":"汇丰晋信珠三角区域发展混合","price":1.8087,"chg":1.24,"prob":33,"c5":-5.85,"pb":{"level":"small","risk":2},"nick":"汇丰晋信珠三角区域发","sec":"综合","m3":-17.72},{"code":"004374","full":"华泰保兴吉年丰混合发起A","price":2.4657,"chg":2.39,"prob":45,"c5":-4.19,"pb":{"level":"small","risk":2},"nick":"华泰保兴吉年丰发起A","sec":"综合","m3":-22.78},{"code":"004375","full":"华泰保兴吉年丰混合发起C","price":2.4129,"chg":2.39,"prob":45,"c5":-4.19,"pb":{"level":"small","risk":2},"nick":"华泰保兴吉年丰发起C","sec":"综合","m3":-22.86},{"code":"004393","full":"安信企业价值优选混合A","price":1.9699,"chg":-0.91,"prob":42,"c5":-2.38,"pb":{"level":"small","risk":0},"nick":"安信企业价值优选","sec":"综合","m3":-4.02},{"code":"004424","full":"汇添富文体娱乐混合A","price":1.6711,"chg":0.4,"prob":48,"c5":-1.57,"pb":{"level":"small","risk":2},"nick":"汇添富文体娱乐","sec":"综合","m3":-5.48},{"code":"004434","full":"博时逆向投资混合A","price":1.6747,"chg":1.2,"prob":46,"c5":-1.45,"pb":{"level":"small","risk":2},"nick":"博时逆向投资","sec":"综合","m3":-29.52},{"code":"004435","full":"博时逆向投资混合C","price":1.5957,"chg":1.19,"prob":46,"c5":-1.46,"pb":{"level":"small","risk":2},"nick":"博时逆向投资","sec":"综合","m3":-29.61},{"code":"004477","full":"嘉实沪港深回报混合","price":1.5833,"chg":-0.43,"prob":46,"c5":-1.83,"pb":{"level":"small","risk":0},"nick":"嘉实沪港深回报","sec":"综合","m3":-13.0},{"code":"004505","full":"博时新兴消费主题混合A","price":1.43,"chg":0.42,"prob":49,"c5":-1.17,"pb":{"level":"small","risk":2},"nick":"博时新兴消费主题","sec":"消费","m3":1.71},{"code":"004703","full":"南方兴盛先锋混合A","price":2.1586,"chg":-0.07,"prob":36,"c5":-2.37,"pb":{"level":"small","risk":0},"nick":"南方兴盛先锋","sec":"综合","m3":-6.8},{"code":"004845","full":"南华瑞盈混合发起A","price":0.9997,"chg":0.24,"prob":51,"c5":-1.07,"pb":{"level":"small","risk":2},"nick":"南华瑞盈发起A","sec":"综合","m3":-29.66},{"code":"004846","full":"南华瑞盈混合发起C","price":1.0047,"chg":0.24,"prob":50,"c5":-1.07,"pb":{"level":"small","risk":2},"nick":"南华瑞盈发起C","sec":"综合","m3":-29.77},{"code":"004868","full":"交银股息优化混合","price":1.8001,"chg":0.47,"prob":55,"c5":-0.88,"pb":{"level":"small","risk":2},"nick":"交银股息优化","sec":"综合","m3":6.46},{"code":"004871","full":"中银金融地产混合A","price":1.5896,"chg":-1.03,"prob":48,"c5":-1.17,"pb":{"level":"small","risk":0},"nick":"中银金融地产","sec":"金融","m3":-0.46},{"code":"004926","full":"中航军民融合精选A","price":0.7791,"chg":2.73,"prob":27,"c5":-7.54,"pb":{"level":"small","risk":2},"nick":"中航军民融合精选A","sec":"综合","m3":-23.16},{"code":"004927","full":"中航军民融合精选C","price":0.7666,"chg":2.72,"prob":27,"c5":-7.55,"pb":{"level":"small","risk":2},"nick":"中航军民融合精选C","sec":"综合","m3":-23.19},{"code":"004936","full":"中航混改精选混合A","price":0.731,"chg":1.97,"prob":27,"c5":-6.11,"pb":{"level":"small","risk":2},"nick":"中航混改精选","sec":"综合","m3":-36.27},{"code":"004937","full":"中航混改精选混合C","price":0.7131,"chg":1.94,"prob":27,"c5":-6.12,"pb":{"level":"small","risk":2},"nick":"中航混改精选","sec":"综合","m3":-36.3},{"code":"004959","full":"圆信永丰优悦生活混合","price":2.0724,"chg":0.39,"prob":43,"c5":-1.76,"pb":{"level":"small","risk":2},"nick":"圆信永丰优悦生活","sec":"综合","m3":-16.17},{"code":"005001","full":"交银持续成长主题混合A","price":2.5042,"chg":0.24,"prob":42,"c5":-1.16,"pb":{"level":"small","risk":2},"nick":"交银持续成长主题","sec":"综合","m3":-0.56},{"code":"005004","full":"交银品质升级混合A","price":1.3562,"chg":1.05,"prob":54,"c5":-1.07,"pb":{"level":"small","risk":2},"nick":"交银品质升级","sec":"综合","m3":3.48},{"code":"005005","full":"中金瑞安混合发起A","price":1.4004,"chg":3.24,"prob":35,"c5":-4.09,"pb":{"level":"small","risk":2},"nick":"中金瑞安发起A","sec":"综合","m3":-26.42},{"code":"005006","full":"中金瑞安混合发起C","price":1.3508,"chg":3.24,"prob":35,"c5":-4.09,"pb":{"level":"small","risk":2},"nick":"中金瑞安发起C","sec":"综合","m3":-26.5},{"code":"005041","full":"人保研究精选混合A","price":1.4425,"chg":0.71,"prob":47,"c5":-0.19,"pb":{"level":"small","risk":2},"nick":"人保研究精选","sec":"综合","m3":-33.16},{"code":"005042","full":"人保研究精选混合C","price":1.379,"chg":0.7,"prob":47,"c5":-0.2,"pb":{"level":"small","risk":2},"nick":"人保研究精选","sec":"综合","m3":-33.24},{"code":"005043","full":"国寿安保健康科学混合A","price":0.8764,"chg":3.69,"prob":38,"c5":-2.32,"pb":{"level":"small","risk":3},"nick":"国寿安保健康科学","sec":"医疗","m3":-10.72},{"code":"005044","full":"国寿安保健康科学混合C","price":0.851,"chg":3.69,"prob":38,"c5":-2.32,"pb":{"level":"small","risk":3},"nick":"国寿安保健康科学","sec":"医疗","m3":-10.79},{"code":"005075","full":"富国研究量化精选混合A","price":1.7257,"chg":2.48,"prob":35,"c5":-2.75,"pb":{"level":"small","risk":2},"nick":"富国研究量化精选","sec":"综合","m3":-22.44},{"code":"005082","full":"诺德量化蓝筹增强混合A","price":1.0757,"chg":0.94,"prob":38,"c5":-1.87,"pb":{"level":"small","risk":2},"nick":"诺德量化蓝筹增强","sec":"综合","m3":-6.66},{"code":"005083","full":"诺德量化蓝筹增强混合C","price":1.0791,"chg":0.94,"prob":38,"c5":-1.87,"pb":{"level":"small","risk":2},"nick":"诺德量化蓝筹增强","sec":"综合","m3":-6.68},{"code":"005090","full":"嘉合睿金混合发起式A","price":1.2842,"chg":3.15,"prob":31,"c5":-1.92,"pb":{"level":"small","risk":2},"nick":"嘉合睿金","sec":"综合","m3":-44.4},{"code":"005091","full":"嘉合睿金混合发起式C","price":1.2038,"chg":3.14,"prob":31,"c5":-1.94,"pb":{"level":"small","risk":2},"nick":"嘉合睿金C","sec":"综合","m3":-44.52},{"code":"005094","full":"万家臻选混合A","price":4.6078,"chg":1.43,"prob":43,"c5":-0.7,"pb":{"level":"small","risk":3},"nick":"万家臻选","sec":"综合","m3":-20.53},{"code":"005104","full":"富荣福康混合A","price":0.658,"chg":3.54,"prob":32,"c5":-5.09,"pb":{"level":"small","risk":2},"nick":"富荣福康","sec":"综合","m3":-25.25},{"code":"005105","full":"富荣福康混合C","price":0.6483,"chg":3.55,"prob":32,"c5":-5.08,"pb":{"level":"small","risk":2},"nick":"富荣福康","sec":"综合","m3":-25.25},{"code":"005126","full":"银河量化稳进混合","price":1.3659,"chg":2.65,"prob":35,"c5":-3.33,"pb":{"level":"small","risk":2},"nick":"银河量化稳进","sec":"综合","m3":-25.0},{"code":"005136","full":"华安幸福生活混合A","price":3.1931,"chg":1.29,"prob":43,"c5":-0.87,"pb":{"level":"small","risk":2},"nick":"华安幸福生活","sec":"综合","m3":-15.76},{"code":"005164","full":"富荣福锦混合A","price":1.7782,"chg":14.08,"prob":29,"c5":-8.54,"pb":{"level":"big","risk":11},"nick":"富荣福锦","sec":"综合","m3":-1.28},{"code":"005165","full":"富荣福锦混合C","price":1.7457,"chg":14.08,"prob":29,"c5":-8.54,"pb":{"level":"big","risk":11},"nick":"富荣福锦","sec":"综合","m3":-1.3},{"code":"005207","full":"南方高端装备混合C","price":2.9323,"chg":4.33,"prob":28,"c5":-4.65,"pb":{"level":"small","risk":2},"nick":"南方高端装备","sec":"综合","m3":-39.78},{"code":"005228","full":"汇添富港股通专注成长A","price":0.4195,"chg":0.5,"prob":39,"c5":-3.32,"pb":{"level":"small","risk":2},"nick":"汇添富港股通专注成长","sec":"海外","m3":-25.71},{"code":"005233","full":"广发睿毅领先混合A","price":2.0126,"chg":0.73,"prob":51,"c5":-1.91,"pb":{"level":"small","risk":2},"nick":"广发睿毅领先","sec":"综合","m3":3.81},{"code":"005241","full":"中欧时代智慧混合A","price":1.3607,"chg":0.0,"prob":43,"c5":-1.83,"pb":{"level":"small","risk":0},"nick":"中欧时代智慧","sec":"综合","m3":-5.86},{"code":"005242","full":"中欧时代智慧混合C","price":1.2646,"chg":-0.01,"prob":42,"c5":-1.85,"pb":{"level":"small","risk":0},"nick":"中欧时代智慧","sec":"综合","m3":-6.05},{"code":"005250","full":"银华估值优势混合","price":1.0162,"chg":-0.17,"prob":51,"c5":-0.23,"pb":{"level":"small","risk":0},"nick":"银华估值优势","sec":"综合","m3":-17.03},{"code":"005296","full":"南华丰淳混合A","price":1.2658,"chg":4.16,"prob":37,"c5":-2.87,"pb":{"level":"small","risk":4},"nick":"南华丰淳","sec":"综合","m3":-16.09},{"code":"005297","full":"南华丰淳混合C","price":1.1975,"chg":4.16,"prob":37,"c5":-2.87,"pb":{"level":"small","risk":4},"nick":"南华丰淳","sec":"综合","m3":-16.17},{"code":"005311","full":"万家经济新动能混合A","price":1.9392,"chg":3.46,"prob":40,"c5":-1.52,"pb":{"level":"small","risk":3},"nick":"万家经济新动能","sec":"综合","m3":-12.92},{"code":"005312","full":"万家经济新动能混合C","price":1.8403,"chg":3.45,"prob":40,"c5":-1.54,"pb":{"level":"small","risk":3},"nick":"万家经济新动能","sec":"综合","m3":-13.03},{"code":"005335","full":"浙商全景消费混合A","price":0.997,"chg":1.15,"prob":39,"c5":-3.39,"pb":{"level":"small","risk":2},"nick":"浙商全景消费","sec":"消费","m3":-8.36},{"code":"005351","full":"汇添富行业整合混合A","price":1.4204,"chg":-0.01,"prob":32,"c5":-2.9,"pb":{"level":"small","risk":0},"nick":"汇添富行业整合","sec":"综合","m3":-17.09},{"code":"005352","full":"鹏扬景泰成长混合A","price":1.8119,"chg":0.4,"prob":46,"c5":-1.67,"pb":{"level":"small","risk":2},"nick":"鹏扬景泰成长","sec":"综合","m3":-12.13},{"code":"005353","full":"鹏扬景泰成长混合C","price":1.7479,"chg":0.4,"prob":46,"c5":-1.68,"pb":{"level":"small","risk":2},"nick":"鹏扬景泰成长","sec":"综合","m3":-12.22},{"code":"005379","full":"汇添富价值创造定开混合","price":1.327,"chg":1.49,"prob":37,"c5":-2.36,"pb":{"level":"small","risk":2},"nick":"汇添富价值创造定开","sec":"综合","m3":-28.27},{"code":"005399","full":"长信量化价值驱动混合A","price":1.707,"chg":0.03,"prob":50,"c5":-0.49,"pb":{"level":"small","risk":2},"nick":"长信量化价值驱动","sec":"综合","m3":-13.09},{"code":"005409","full":"华泰柏瑞新兴产业混合A","price":1.1706,"chg":4.16,"prob":33,"c5":-5.24,"pb":{"level":"small","risk":2},"nick":"华泰柏瑞新兴产业","sec":"综合","m3":-28.73},{"code":"005445","full":"华宝价值发现混合A","price":1.2604,"chg":1.79,"prob":36,"c5":-4.42,"pb":{"level":"small","risk":2},"nick":"华宝价值发现","sec":"综合","m3":-11.8},{"code":"005449","full":"华夏行业龙头混合","price":1.2771,"chg":1.77,"prob":48,"c5":-0.06,"pb":{"level":"small","risk":3},"nick":"华夏行业龙头","sec":"综合","m3":-26.46},{"code":"005474","full":"泰康均衡优选混合A","price":1.4656,"chg":0.32,"prob":37,"c5":-2.22,"pb":{"level":"small","risk":2},"nick":"泰康均衡优选","sec":"综合","m3":-20.05},{"code":"005475","full":"泰康均衡优选混合C","price":1.4242,"chg":0.32,"prob":37,"c5":-2.22,"pb":{"level":"small","risk":2},"nick":"泰康均衡优选","sec":"综合","m3":-20.15},{"code":"005498","full":"银华积极成长混合A","price":1.4167,"chg":0.88,"prob":44,"c5":-2.4,"pb":{"level":"small","risk":2},"nick":"银华积极成长","sec":"综合","m3":-20.4},{"code":"005504","full":"汇添富沪港深大盘价值混合A","price":0.4885,"chg":0.91,"prob":26,"c5":-8.31,"pb":{"level":"small","risk":2},"nick":"汇添富沪港深大盘价值","sec":"综合","m3":-31.23},{"code":"005521","full":"华安红利精选混合A","price":1.1414,"chg":-0.77,"prob":52,"c5":-0.79,"pb":{"level":"small","risk":0},"nick":"华安红利精选","sec":"综合","m3":-2.31},{"code":"005598","full":"广发中小盘精选混合A","price":1.9986,"chg":2.16,"prob":33,"c5":-5.68,"pb":{"level":"small","risk":2},"nick":"广发中小盘精选","sec":"综合","m3":-34.92},{"code":"005609","full":"富国军工主题混合A","price":1.4862,"chg":1.14,"prob":33,"c5":-5.6,"pb":{"level":"small","risk":2},"nick":"富国军工主题","sec":"军工","m3":-13.92},{"code":"005630","full":"华安研究精选混合A","price":2.1016,"chg":0.5,"prob":41,"c5":-0.9,"pb":{"level":"small","risk":2},"nick":"华安研究精选","sec":"综合","m3":-9.19},{"code":"005632","full":"鹏华量化先锋混合","price":1.4116,"chg":3.29,"prob":41,"c5":-3.04,"pb":{"level":"small","risk":2},"nick":"鹏华量化先锋","sec":"综合","m3":-18.72},{"code":"005634","full":"汇安行业龙头混合A","price":2.5715,"chg":-0.46,"prob":47,"c5":-2.79,"pb":{"level":"small","risk":0},"nick":"汇安行业龙头","sec":"综合","m3":-0.31},{"code":"005638","full":"农银汇理量化智慧动力混合","price":2.0219,"chg":1.58,"prob":47,"c5":-1.17,"pb":{"level":"small","risk":2},"nick":"农银汇理量化智慧动力","sec":"综合","m3":-26.83},{"code":"005644","full":"广发沪港深龙头混合","price":0.666,"chg":-0.08,"prob":37,"c5":-1.61,"pb":{"level":"small","risk":0},"nick":"广发沪港深龙头","sec":"综合","m3":-4.61},{"code":"005701","full":"摩根香港精选港股通混合A","price":0.8711,"chg":0.43,"prob":38,"c5":-3.69,"pb":{"level":"small","risk":2},"nick":"摩根香港精选港股通","sec":"海外","m3":-17.6},{"code":"005708","full":"国联安远见成长混合","price":2.7415,"chg":1.44,"prob":40,"c5":-3.58,"pb":{"level":"small","risk":2},"nick":"国联安远见成长","sec":"综合","m3":-6.01},{"code":"005729","full":"南方人工智能混合","price":2.5983,"chg":1.13,"prob":40,"c5":-1.71,"pb":{"level":"small","risk":2},"nick":"南方人工智能","sec":"科技","m3":-29.26},{"code":"005739","full":"富国转型机遇混合","price":1.7206,"chg":0.2,"prob":51,"c5":-0.54,"pb":{"level":"small","risk":2},"nick":"富国转型机遇","sec":"综合","m3":-14.99},{"code":"005760","full":"富国周期优势混合A","price":2.3239,"chg":0.04,"prob":39,"c5":-2.15,"pb":{"level":"small","risk":2},"nick":"富国周期优势","sec":"综合","m3":-18.41},{"code":"005765","full":"中欧明睿新常态混合C","price":2.1892,"chg":1.88,"prob":44,"c5":-0.27,"pb":{"level":"small","risk":3},"nick":"中欧明睿新常态","sec":"综合","m3":-37.65},{"code":"005774","full":"华夏产业升级混合A","price":1.7566,"chg":-0.21,"prob":39,"c5":-1.67,"pb":{"level":"small","risk":0},"nick":"华夏产业升级","sec":"综合","m3":-36.64},{"code":"005787","full":"中欧新趋势混合C","price":1.3104,"chg":1.39,"prob":38,"c5":-1.3,"pb":{"level":"small","risk":3},"nick":"中欧新趋势","sec":"综合","m3":-17.24},{"code":"005805","full":"华泰柏瑞医疗健康A","price":2.2382,"chg":5.85,"prob":36,"c5":-4.73,"pb":{"level":"small","risk":3},"nick":"华泰柏瑞医疗健康A","sec":"医疗","m3":-12.22},{"code":"005819","full":"国泰优势行业混合A","price":3.0107,"chg":-1.38,"prob":61,"c5":3.77,"pb":{"level":"small","risk":5},"nick":"国泰优势行业","sec":"综合","m3":-31.22},{"code":"005827","full":"易方达蓝筹精选混合","price":1.3365,"chg":-0.19,"prob":34,"c5":-2.42,"pb":{"level":"small","risk":0},"nick":"易方达蓝筹精选","sec":"综合","m3":-11.75},{"code":"005840","full":"富国产业驱动混合A","price":2.291,"chg":0.51,"prob":37,"c5":-1.6,"pb":{"level":"small","risk":2},"nick":"富国产业驱动","sec":"综合","m3":-22.21},{"code":"005844","full":"东方人工智能主题混合A","price":2.3854,"chg":-1.43,"prob":58,"c5":1.95,"pb":{"level":"small","risk":2},"nick":"东方人工智能主题","sec":"科技","m3":-29.84},{"code":"005847","full":"富国沪港深业绩驱动混合型A","price":1.8573,"chg":0.38,"prob":38,"c5":-3.87,"pb":{"level":"small","risk":2},"nick":"富国沪港深业绩驱动型","sec":"综合","m3":-12.01},{"code":"005848","full":"银华裕利混合发起式A","price":1.9917,"chg":-0.42,"prob":38,"c5":-1.39,"pb":{"level":"small","risk":0},"nick":"银华裕利","sec":"综合","m3":1.54},{"code":"005875","full":"易方达中盘成长混合","price":2.2921,"chg":1.82,"prob":46,"c5":1.78,"pb":{"level":"small","risk":7},"nick":"易方达中盘成长","sec":"综合","m3":-36.16},{"code":"005888","full":"华夏新兴消费混合A","price":1.6709,"chg":1.24,"prob":40,"c5":-3.44,"pb":{"level":"small","risk":2},"nick":"华夏新兴消费","sec":"消费","m3":-2.89},{"code":"005889","full":"华夏新兴消费混合C","price":1.6041,"chg":1.22,"prob":40,"c5":-3.46,"pb":{"level":"small","risk":2},"nick":"华夏新兴消费","sec":"消费","m3":-3.02},{"code":"005904","full":"华泰保兴成长优选A","price":1.7877,"chg":0.29,"prob":49,"c5":-2.36,"pb":{"level":"small","risk":2},"nick":"华泰保兴成长优选A","sec":"综合","m3":-16.91},{"code":"000001","full":"华夏成长混合","price":0.945,"chg":0.85,"prob":56,"c5":0.11,"pb":{"level":"small","risk":3},"nick":"华夏成长","sec":"综合","m3":-27.14},{"code":"000011","full":"华夏大盘精选混合A","price":18.782,"chg":1.13,"prob":49,"c5":-0.76,"pb":{"level":"small","risk":2},"nick":"华夏大盘精选","sec":"综合","m3":-20.45},{"code":"000029","full":"富国宏观策略灵活配置混合A","price":2.232,"chg":1.69,"prob":29,"c5":-4.82,"pb":{"level":"small","risk":2},"nick":"富国宏观策略","sec":"综合","m3":-30.42},{"code":"000030","full":"长城核心优选混合A","price":1.124,"chg":0.48,"prob":44,"c5":-1.01,"pb":{"level":"small","risk":2},"nick":"长城核心优选","sec":"综合","m3":-12.69},{"code":"000056","full":"建信消费升级混合","price":1.748,"chg":-0.34,"prob":49,"c5":-1.19,"pb":{"level":"small","risk":0},"nick":"建信消费升级","sec":"消费","m3":-1.13},{"code":"000058","full":"国联安安泰灵活配置混合A","price":1.548,"chg":0.02,"prob":52,"c5":-0.36,"pb":{"level":"small","risk":1},"nick":"国联安安泰","sec":"综合","m3":-2.71},{"code":"000063","full":"长盛电子信息主题混合A","price":1.4305,"chg":4.04,"prob":35,"c5":-4.67,"pb":{"level":"small","risk":2},"nick":"长盛电子信息主题","sec":"科技","m3":-15.04},{"code":"000065","full":"国富焦点驱动混合A","price":2.0569,"chg":-0.19,"prob":52,"c5":-0.18,"pb":{"level":"small","risk":0},"nick":"国富焦点驱动","sec":"综合","m3":-5.23},{"code":"000072","full":"华安稳健回报混合A","price":1.3621,"chg":-0.03,"prob":52,"c5":0.1,"pb":{"level":"small","risk":0},"nick":"华安稳健回报","sec":"综合","m3":-1.25},{"code":"000073","full":"摩根成长动力混合A","price":1.9523,"chg":2.2,"prob":34,"c5":-0.6,"pb":{"level":"small","risk":3},"nick":"摩根成长动力","sec":"综合","m3":-34.05},{"code":"000126","full":"招商安润灵活配置混合A","price":1.4562,"chg":-0.5,"prob":51,"c5":1.01,"pb":{"level":"small","risk":1},"nick":"招商安润","sec":"综合","m3":-30.43},{"code":"000136","full":"民生加银策略精选混合A","price":3.6974,"chg":1.47,"prob":42,"c5":0.23,"pb":{"level":"small","risk":3},"nick":"民生加银策略精选","sec":"综合","m3":-21.57},{"code":"000165","full":"国投瑞银策略精选混合","price":1.8808,"chg":0.19,"prob":45,"c5":-1.08,"pb":{"level":"small","risk":2},"nick":"国投瑞银策略精选","sec":"综合","m3":-12.91},{"code":"000167","full":"广发聚优灵活配置混合A","price":2.124,"chg":1.0,"prob":37,"c5":-1.89,"pb":{"level":"small","risk":2},"nick":"广发聚优","sec":"综合","m3":-18.65},{"code":"000190","full":"中银新回报灵活配置混合A","price":1.9024,"chg":-0.2,"prob":58,"c5":0.36,"pb":{"level":"small","risk":0},"nick":"中银新回报","sec":"综合","m3":0.28},{"code":"000195","full":"工银成长收益混合A","price":1.593,"chg":-0.25,"prob":36,"c5":-0.87,"pb":{"level":"small","risk":0},"nick":"工银成长收益","sec":"综合","m3":-7.49},{"code":"000196","full":"工银成长收益混合B","price":1.494,"chg":-0.2,"prob":36,"c5":-0.8,"pb":{"level":"small","risk":0},"nick":"工银成长收益B","sec":"综合","m3":-7.61},{"code":"000214","full":"广发成长优选混合","price":1.468,"chg":0.2,"prob":45,"c5":-0.68,"pb":{"level":"small","risk":2},"nick":"广发成长优选","sec":"综合","m3":-12.62},{"code":"000215","full":"广发趋势优选灵活配置混合A","price":1.6943,"chg":0.37,"prob":41,"c5":-0.55,"pb":{"level":"small","risk":1},"nick":"广发趋势优选","sec":"综合","m3":-3.31},{"code":"000219","full":"博时裕益混合A","price":3.0823,"chg":-0.53,"prob":48,"c5":-1.01,"pb":{"level":"small","risk":0},"nick":"博时裕益","sec":"综合","m3":-6.72},{"code":"000241","full":"宝盈核心优势混合C","price":0.6366,"chg":-0.39,"prob":41,"c5":-0.73,"pb":{"level":"small","risk":0},"nick":"宝盈核心优势","sec":"综合","m3":-3.79},{"code":"000242","full":"景顺长城策略精选灵活配置混合A","price":3.218,"chg":-2.04,"prob":30,"c5":-5.3,"pb":{"level":"small","risk":0},"nick":"景顺长城策略精选","sec":"综合","m3":-23.54},{"code":"000259","full":"农银区间收益混合","price":4.7657,"chg":1.37,"prob":49,"c5":0.27,"pb":{"level":"small","risk":3},"nick":"农银区间收益","sec":"综合","m3":-18.99},{"code":"000264","full":"博时内需增长混合A","price":0.886,"chg":0.34,"prob":57,"c5":0.68,"pb":{"level":"small","risk":1},"nick":"博时内需增长","sec":"综合","m3":1.03},{"code":"000270","full":"建信灵活配置混合A","price":1.5579,"chg":2.14,"prob":29,"c5":-10.49,"pb":{"level":"small","risk":2},"nick":"建信","sec":"综合","m3":-14.02},{"code":"000273","full":"华润元大安鑫灵活配置混合A","price":1.7067,"chg":0.19,"prob":55,"c5":1.72,"pb":{"level":"small","risk":5},"nick":"华润元大安鑫","sec":"综合","m3":-21.57},{"code":"000279","full":"华商红利优选混合","price":0.764,"chg":-0.39,"prob":46,"c5":-0.52,"pb":{"level":"small","risk":0},"nick":"华商红利优选","sec":"综合","m3":-3.17},{"code":"000314","full":"招商瑞丰灵活配置混合发起式A","price":1.879,"chg":1.08,"prob":36,"c5":-7.89,"pb":{"level":"small","risk":2},"nick":"招商瑞丰","sec":"综合","m3":-9.36},{"code":"000328","full":"摩根转型动力混合A","price":1.9282,"chg":0.38,"prob":48,"c5":-0.51,"pb":{"level":"small","risk":2},"nick":"摩根转型动力","sec":"综合","m3":-27.79},{"code":"000336","full":"农银研究精选混合","price":3.1349,"chg":0.26,"prob":51,"c5":-0.66,"pb":{"level":"small","risk":2},"nick":"农银研究精选","sec":"综合","m3":-17.21},{"code":"000362","full":"国泰聚信价值优势混合A","price":1.98,"chg":3.77,"prob":31,"c5":-5.89,"pb":{"level":"small","risk":2},"nick":"国泰聚信价值优势","sec":"综合","m3":-23.67},{"code":"000363","full":"国泰聚信价值优势混合C","price":1.932,"chg":3.76,"prob":31,"c5":-5.89,"pb":{"level":"small","risk":2},"nick":"国泰聚信价值优势","sec":"综合","m3":-23.76},{"code":"000390","full":"华商优势行业混合A","price":1.335,"chg":5.12,"prob":37,"c5":0.23,"pb":{"level":"small","risk":6},"nick":"华商优势行业","sec":"综合","m3":-46.02},{"code":"000398","full":"华富灵活配置混合A","price":0.6865,"chg":-1.0,"prob":44,"c5":-1.94,"pb":{"level":"small","risk":0},"nick":"华富","sec":"综合","m3":-18.77},{"code":"000404","full":"易方达新兴成长灵活配置","price":6.324,"chg":0.99,"prob":31,"c5":-4.33,"pb":{"level":"small","risk":2},"nick":"易方达新兴成长","sec":"综合","m3":-31.9},{"code":"000408","full":"民生加银城镇化混合A","price":2.1435,"chg":2.19,"prob":41,"c5":-2.99,"pb":{"level":"small","risk":2},"nick":"民生加银城镇化","sec":"综合","m3":-25.23},{"code":"000410","full":"益民服务领先混合A","price":1.2677,"chg":4.69,"prob":30,"c5":-5.88,"pb":{"level":"small","risk":3},"nick":"益民服务领先","sec":"综合","m3":-22.59},{"code":"000423","full":"前海开源事件驱动混合A","price":2.08,"chg":2.82,"prob":44,"c5":2.36,"pb":{"level":"big","risk":9},"nick":"前海开源事件驱动","sec":"综合","m3":-0.72},{"code":"000431","full":"鹏华品牌传承混合","price":2.826,"chg":1.8,"prob":38,"c5":-3.22,"pb":{"level":"small","risk":2},"nick":"鹏华品牌传承","sec":"综合","m3":-16.07},{"code":"000433","full":"安信鑫发优选混合A","price":2.3995,"chg":0.52,"prob":46,"c5":-0.58,"pb":{"level":"small","risk":2},"nick":"安信鑫发优选","sec":"综合","m3":-13.79},{"code":"000458","full":"英大领先回报A","price":1.2245,"chg":2.52,"prob":37,"c5":-2.66,"pb":{"level":"small","risk":2},"nick":"英大领先回报A","sec":"综合","m3":-32.42},{"code":"000459","full":"英大领先回报B","price":1.2245,"chg":2.52,"prob":37,"c5":-2.66,"pb":{"level":"small","risk":2},"nick":"英大领先回报B","sec":"综合","m3":-32.42},{"code":"000462","full":"农银主题轮动混合A","price":3.0499,"chg":2.9,"prob":33,"c5":-4.77,"pb":{"level":"small","risk":2},"nick":"农银主题轮动","sec":"综合","m3":-30.62},{"code":"000477","full":"广发主题领先混合A","price":2.2404,"chg":-0.56,"prob":42,"c5":-0.7,"pb":{"level":"small","risk":0},"nick":"广发主题领先","sec":"综合","m3":-1.95},{"code":"000480","full":"东方红新动力混合A","price":5.722,"chg":1.13,"prob":38,"c5":-3.08,"pb":{"level":"small","risk":2},"nick":"东方红新动力","sec":"综合","m3":-5.52},{"code":"000496","full":"长安产业精选混合A","price":1.1088,"chg":1.95,"prob":42,"c5":-0.79,"pb":{"level":"small","risk":3},"nick":"长安产业精选","sec":"综合","m3":-36.27},{"code":"000511","full":"国泰国策驱动灵活配置混合A","price":1.204,"chg":3.08,"prob":38,"c5":-2.19,"pb":{"level":"small","risk":3},"nick":"国泰国策驱动","sec":"综合","m3":-29.75},{"code":"002021","full":"华夏回报二号混合","price":1.077,"chg":0.09,"prob":57,"c5":-0.19,"pb":{"level":"small","risk":2},"nick":"华夏回报二号","sec":"综合","m3":-8.81},{"code":"009326","full":"广发稳健增长混合C","price":1.4139,"chg":0.5,"prob":46,"c5":-0.91,"pb":{"level":"small","risk":2},"nick":"广发稳健增长","sec":"综合","m3":-10.52},{"code":"009649","full":"嘉实精选平衡混合A","price":1.1132,"chg":-2.25,"prob":32,"c5":-4.59,"pb":{"level":"small","risk":0},"nick":"嘉实精选平衡","sec":"综合","m3":-12.02},{"code":"009650","full":"嘉实精选平衡混合C","price":1.0833,"chg":-2.26,"prob":32,"c5":-4.61,"pb":{"level":"small","risk":0},"nick":"嘉实精选平衡","sec":"综合","m3":-12.11},{"code":"009887","full":"广发稳健优选六个月持有期混合A","price":1.0636,"chg":0.15,"prob":54,"c5":-0.13,"pb":{"level":"small","risk":2},"nick":"广发稳健优选六个月持","sec":"综合","m3":-5.73},{"code":"009888","full":"广发稳健优选六个月持有期混合C","price":1.0371,"chg":0.14,"prob":54,"c5":-0.14,"pb":{"level":"small","risk":2},"nick":"广发稳健优选六个月持","sec":"综合","m3":-5.83},{"code":"009951","full":"广发稳健回报混合A","price":0.8043,"chg":-1.77,"prob":36,"c5":-4.56,"pb":{"level":"small","risk":0},"nick":"广发稳健回报","sec":"综合","m3":-18.2},{"code":"009952","full":"广发稳健回报混合C","price":0.7844,"chg":-1.78,"prob":36,"c5":-4.56,"pb":{"level":"small","risk":0},"nick":"广发稳健回报","sec":"综合","m3":-18.29},{"code":"010379","full":"广发均衡优选混合A","price":0.9649,"chg":0.58,"prob":53,"c5":0.06,"pb":{"level":"small","risk":6},"nick":"广发均衡优选","sec":"综合","m3":-5.04},{"code":"010380","full":"广发均衡优选混合C","price":0.9425,"chg":0.59,"prob":53,"c5":0.06,"pb":{"level":"small","risk":6},"nick":"广发均衡优选","sec":"综合","m3":-5.13},{"code":"011189","full":"建信智汇优选一年持有期混合(MOM)","price":0.7991,"chg":0.01,"prob":45,"c5":-1.26,"pb":{"level":"small","risk":1},"nick":"建信智汇优选一年持有","sec":"综合","m3":-13.63},{"code":"011698","full":"南方均衡回报混合A","price":1.2265,"chg":-0.93,"prob":46,"c5":-1.04,"pb":{"level":"small","risk":0},"nick":"南方均衡回报","sec":"综合","m3":-8.91},{"code":"011701","full":"南方均衡回报混合C","price":1.1995,"chg":-0.93,"prob":46,"c5":-1.05,"pb":{"level":"small","risk":0},"nick":"南方均衡回报","sec":"综合","m3":-8.99},{"code":"011738","full":"华安兴安优选一年持有混合A","price":0.8946,"chg":0.87,"prob":37,"c5":-3.89,"pb":{"level":"small","risk":2},"nick":"华安兴安优选一年持有","sec":"综合","m3":-19.14},{"code":"011739","full":"华安兴安优选一年持有混合C","price":0.8753,"chg":0.88,"prob":37,"c5":-3.9,"pb":{"level":"small","risk":2},"nick":"华安兴安优选一年持有","sec":"综合","m3":-19.22},{"code":"011777","full":"易方达稳健增长混合A","price":0.8787,"chg":-0.23,"prob":37,"c5":-1.61,"pb":{"level":"small","risk":0},"nick":"易方达稳健增长","sec":"综合","m3":-5.37},{"code":"011778","full":"易方达稳健增长混合C","price":0.864,"chg":-0.24,"prob":37,"c5":-1.63,"pb":{"level":"small","risk":0},"nick":"易方达稳健增长","sec":"综合","m3":-5.45},{"code":"011975","full":"广发均衡回报混合A","price":0.7343,"chg":0.12,"prob":47,"c5":-0.24,"pb":{"level":"small","risk":1},"nick":"广发均衡回报","sec":"综合","m3":-23.88},{"code":"011976","full":"广发均衡回报混合C","price":0.7185,"chg":0.13,"prob":47,"c5":-0.25,"pb":{"level":"small","risk":1},"nick":"广发均衡回报","sec":"综合","m3":-23.95},{"code":"000071","full":"华夏恒生ETF联接A","price":1.3241,"chg":-0.13,"prob":33,"c5":-5.42,"pb":{"level":"small","risk":0},"nick":"华夏恒生","sec":"海外","m3":-12.22},{"code":"000075","full":"华夏恒生ETF联接现汇","price":0.1973,"chg":-0.1,"prob":33,"c5":-5.37,"pb":{"level":"small","risk":0},"nick":"华夏恒生现汇","sec":"海外","m3":-11.25},{"code":"000076","full":"华夏恒生ETF联接现钞","price":0.1973,"chg":-0.1,"prob":33,"c5":-5.37,"pb":{"level":"small","risk":0},"nick":"华夏恒生现钞","sec":"海外","m3":-11.25},{"code":"000179","full":"广发美国房地产指数人民币(QDII)A","price":1.191,"chg":-1.16,"prob":42,"c5":-3.48,"pb":{"level":"small","risk":0},"nick":"广发美国房地产人民币","sec":"海外","m3":-6.15},{"code":"000180","full":"广发美国房地产指数美元现汇(QDII)A","price":0.1774,"chg":-1.17,"prob":42,"c5":-3.48,"pb":{"level":"small","risk":0},"nick":"广发美国房地产美元现","sec":"海外","m3":-5.18},{"code":"000369","full":"广发全球医疗保健指数人民币(QDII)A","price":2.681,"chg":-0.19,"prob":35,"c5":-5.06,"pb":{"level":"small","risk":0},"nick":"广发全球医疗保健人民","sec":"医疗","m3":0.15},{"code":"000370","full":"广发全球医疗保健美元现汇(QDII)A","price":0.3994,"chg":-0.17,"prob":35,"c5":-5.02,"pb":{"level":"small","risk":0},"nick":"广发全球医疗保健美元","sec":"医疗","m3":1.19},{"code":"000593","full":"易方达标普消费品指数美元现汇A","price":0.3922,"chg":-2.56,"prob":40,"c5":-5.49,"pb":{"level":"small","risk":0},"nick":"易方达标普消费品美元","sec":"消费","m3":-10.54},{"code":"000614","full":"华安德国(DAX)联接(QDII)A","price":1.8233,"chg":-2.38,"prob":32,"c5":-7.37,"pb":{"level":"small","risk":0},"nick":"华安德国(DAX)联","sec":"综合","m3":-11.14},{"code":"001092","full":"广发生物科技指数人民币(QDII)A","price":1.617,"chg":-1.52,"prob":32,"c5":-5.6,"pb":{"level":"small","risk":0},"nick":"广发生物科技人民币(","sec":"科技","m3":-8.18},{"code":"001093","full":"广发生物科技指数美元(QDII)A","price":0.2409,"chg":-1.51,"prob":32,"c5":-5.57,"pb":{"level":"small","risk":0},"nick":"广发生物科技美元(Q","sec":"科技","m3":-7.24},{"code":"001481","full":"华宝标普油气上游股票美元A","price":0.1304,"chg":-1.06,"prob":20,"c5":-8.68,"pb":{"level":"small","risk":0},"nick":"华宝标普油气上游美元","sec":"海外","m3":-11.05},{"code":"002423","full":"华宝标普美国消费美元","price":0.4071,"chg":-2.82,"prob":40,"c5":-5.98,"pb":{"level":"small","risk":0},"nick":"华宝标普美国消费美元","sec":"消费","m3":-4.59},{"code":"003719","full":"易方达标普医疗保健美元汇A","price":0.3297,"chg":-0.78,"prob":34,"c5":-5.29,"pb":{"level":"small","risk":0},"nick":"易方达标普医疗保健美","sec":"医疗","m3":2.45},{"code":"003720","full":"易方达标普生物科技美元汇A","price":0.2747,"chg":-2.52,"prob":29,"c5":-6.53,"pb":{"level":"small","risk":0},"nick":"易方达标普生物科技美","sec":"科技","m3":-14.82},{"code":"003721","full":"易方达标普信息科技指数(QDII-LOF)A(美元现汇)","price":0.8201,"chg":-6.67,"prob":25,"c5":-11.46,"pb":{"level":"small","risk":0},"nick":"易方达标普信息科技(","sec":"科技","m3":-16.27},{"code":"004243","full":"广发道琼斯石油指数人民币C","price":2.8017,"chg":-0.63,"prob":22,"c5":-8.06,"pb":{"level":"small","risk":0},"nick":"广发道琼斯石油人民币","sec":"综合","m3":-7.57},{"code":"005613","full":"摩根富时发达市场REITs指数(QDII)人民币A","price":1.4458,"chg":-1.56,"prob":41,"c5":-3.9,"pb":{"level":"small","risk":0},"nick":"摩根富时发达市场RE","sec":"综合","m3":-6.81},{"code":"005614","full":"摩根富时发达市场REITs指数(QDII)美钞","price":0.2188,"chg":-1.44,"prob":43,"c5":-2.84,"pb":{"level":"small","risk":0},"nick":"摩根富时发达市场RE","sec":"综合","m3":-4.66},{"code":"005615","full":"摩根富时发达市场REITs指数(QDII)美汇","price":0.2188,"chg":-1.44,"prob":43,"c5":-2.84,"pb":{"level":"small","risk":0},"nick":"摩根富时发达市场RE","sec":"综合","m3":-4.66},{"code":"000041","full":"华夏全球股票(QDII)(人民币)","price":1.1036,"chg":-4.86,"prob":28,"c5":-9.95,"pb":{"level":"small","risk":0},"nick":"华夏全球(QDII)","sec":"海外","m3":-18.62},{"code":"000043","full":"嘉实美国成长股票人民币","price":5.259,"chg":-4.85,"prob":30,"c5":-9.65,"pb":{"level":"small","risk":0},"nick":"嘉实美国成长人民币","sec":"海外","m3":-15.92},{"code":"000044","full":"嘉实美国成长股票美元现汇","price":4.781,"chg":-4.86,"prob":30,"c5":-9.62,"pb":{"level":"small","risk":0},"nick":"嘉实美国成长美元现汇","sec":"海外","m3":-15.06},{"code":"000906","full":"广发全球精选股票(QDII)美元A","price":0.7187,"chg":-4.62,"prob":28,"c5":-9.54,"pb":{"level":"small","risk":0},"nick":"广发全球精选(QDI","sec":"海外","m3":-22.88},{"code":"000927","full":"博时大中华亚太精选美元现汇","price":0.1464,"chg":-6.03,"prob":22,"c5":-14.13,"pb":{"level":"small","risk":0},"nick":"博时大中华亚太精选美","sec":"海外","m3":-24.46},{"code":"000988","full":"嘉实全球互联网股票人民币","price":1.895,"chg":-4.34,"prob":35,"c5":-7.11,"pb":{"level":"small","risk":0},"nick":"嘉实全球互联网人民币","sec":"科技","m3":-15.82},{"code":"000989","full":"嘉实全球互联网股票美元现汇","price":1.721,"chg":-4.34,"prob":35,"c5":-7.07,"pb":{"level":"small","risk":0},"nick":"嘉实全球互联网美元现","sec":"科技","m3":-14.97},{"code":"000990","full":"嘉实全球互联网股票美元现钞","price":1.721,"chg":-4.34,"prob":35,"c5":-7.07,"pb":{"level":"small","risk":0},"nick":"嘉实全球互联网美元现","sec":"科技","m3":-14.97},{"code":"002379","full":"工银香港中小盘人民币","price":1.146,"chg":-3.13,"prob":28,"c5":-6.53,"pb":{"level":"small","risk":0},"nick":"工银香港中小盘人民币","sec":"综合","m3":-30.67},{"code":"002380","full":"工银香港中小盘美元","price":0.1707,"chg":-3.12,"prob":28,"c5":-6.52,"pb":{"level":"small","risk":0},"nick":"工银香港中小盘美元","sec":"海外","m3":-29.95},{"code":"006105","full":"宏利印度股票(QDII)A","price":1.4372,"chg":1.39,"prob":68,"c5":2.88,"pb":{"level":"big","risk":12},"nick":"宏利印度(QDII)","sec":"综合","m3":6.03},{"code":"006282","full":"摩根欧洲动力策略股票(QDII)A","price":1.6712,"chg":-1.84,"prob":33,"c5":-5.7,"pb":{"level":"small","risk":0},"nick":"摩根欧洲动力策略(Q","sec":"综合","m3":-10.49},{"code":"006555","full":"浦银全球智能科技(QDII)A","price":2.7342,"chg":-5.04,"prob":25,"c5":-10.22,"pb":{"level":"small","risk":0},"nick":"浦银全球智能科技(Q","sec":"科技","m3":-21.97},{"code":"006792","full":"鹏华港美互联股票美元现汇","price":0.1811,"chg":-6.94,"prob":15,"c5":-14.05,"pb":{"level":"small","risk":0},"nick":"鹏华港美互联美元现汇","sec":"海外","m3":-30.1},{"code":"000934","full":"国富大中华精选混合","price":2.514,"chg":-2.97,"prob":29,"c5":-8.01,"pb":{"level":"small","risk":0},"nick":"国富大中华精选","sec":"综合","m3":-24.98},{"code":"001984","full":"摩根中国生物医药混合(QDII)A","price":1.2157,"chg":-3.52,"prob":28,"c5":-7.38,"pb":{"level":"small","risk":0},"nick":"摩根中国生物医药(Q","sec":"医疗","m3":-23.53},{"code":"004877","full":"汇添富全球医疗混合(QDII)人民币","price":2.3477,"chg":-1.16,"prob":30,"c5":-7.29,"pb":{"level":"small","risk":0},"nick":"汇添富全球医疗(QD","sec":"医疗","m3":-11.7},{"code":"004878","full":"汇添富全球医疗混合(QDII)美元现汇","price":2.3345,"chg":-1.16,"prob":30,"c5":-7.27,"pb":{"level":"small","risk":0},"nick":"汇添富全球医疗(QD","sec":"医疗","m3":-10.8},{"code":"004879","full":"汇添富全球医疗混合(QDII)美元现钞","price":2.3345,"chg":-1.16,"prob":30,"c5":-7.27,"pb":{"level":"small","risk":0},"nick":"汇添富全球医疗(QD","sec":"医疗","m3":-10.8},{"code":"005698","full":"华夏全球科技先锋混合(QDII)A(人民币)","price":1.6102,"chg":-5.03,"prob":18,"c5":-11.36,"pb":{"level":"small","risk":0},"nick":"华夏全球科技先锋(Q","sec":"科技","m3":-40.24},{"code":"005801","full":"工银印度基金美元","price":0.2039,"chg":1.65,"prob":67,"c5":2.62,"pb":{"level":"big","risk":12},"nick":"工银印度基金美元","sec":"海外","m3":5.16},{"code":"006308","full":"汇添富全球消费混合(QDII)人民币A","price":2.0092,"chg":-1.24,"prob":37,"c5":-4.15,"pb":{"level":"small","risk":0},"nick":"汇添富全球消费(QD","sec":"消费","m3":-9.04},{"code":"006309","full":"汇添富全球消费混合(QDII)人民币C","price":1.8491,"chg":-1.24,"prob":37,"c5":-4.17,"pb":{"level":"small","risk":0},"nick":"汇添富全球消费(QD","sec":"消费","m3":-9.27},{"code":"006310","full":"汇添富全球消费混合(QDII)美元现汇","price":2.0439,"chg":-1.24,"prob":37,"c5":-4.11,"pb":{"level":"small","risk":0},"nick":"汇添富全球消费(QD","sec":"消费","m3":-8.11},{"code":"006370","full":"国富大中华精选混合美元","price":0.3575,"chg":-4.54,"prob":26,"c5":-11.62,"pb":{"level":"small","risk":0},"nick":"国富大中华精选美元","sec":"海外","m3":-27.76},{"code":"006373","full":"国富全球科技互联混合(QDII)人民币A","price":5.1931,"chg":-6.17,"prob":25,"c5":-11.8,"pb":{"level":"small","risk":0},"nick":"国富全球科技互联(Q","sec":"科技","m3":-22.79},{"code":"006374","full":"国富全球科技互联混合(QDII)美元现汇A","price":5.3119,"chg":-6.17,"prob":25,"c5":-11.77,"pb":{"level":"small","risk":0},"nick":"国富全球科技互联(Q","sec":"科技","m3":-22.0},{"code":"008253","full":"华宝致远混合(QDII)A","price":1.3271,"chg":-4.41,"prob":27,"c5":-8.73,"pb":{"level":"small","risk":0},"nick":"华宝致远(QDII)","sec":"综合","m3":-22.18},{"code":"003321","full":"易方达原油C类人民币","price":1.7373,"chg":-0.24,"prob":26,"c5":-4.21,"pb":{"level":"small","risk":0},"nick":"易方达原油C类人民币","sec":"海外","m3":3.12},{"code":"003322","full":"易方达原油A类美元汇","price":0.2706,"chg":-0.26,"prob":26,"c5":-4.18,"pb":{"level":"small","risk":0},"nick":"易方达原油A类美元汇","sec":"海外","m3":4.24},{"code":"003323","full":"易方达原油C类美元汇","price":0.2588,"chg":-0.23,"prob":26,"c5":-4.18,"pb":{"level":"small","risk":0},"nick":"易方达原油C类美元汇","sec":"海外","m3":4.19},{"code":"006476","full":"南方原油C","price":1.8477,"chg":-0.37,"prob":26,"c5":-4.43,"pb":{"level":"small","risk":0},"nick":"南方原油C","sec":"海外","m3":3.77},{"code":"007976","full":"易方达黄金主题人民币C","price":1.2956,"chg":-3.46,"prob":26,"c5":-8.69,"pb":{"level":"small","risk":0},"nick":"易方达黄金主题人民币","sec":"黄金","m3":-23.73},{"code":"007977","full":"易方达黄金主题美元现汇A","price":0.1935,"chg":-3.49,"prob":26,"c5":-8.68,"pb":{"level":"small","risk":0},"nick":"易方达黄金主题美元现","sec":"黄金","m3":-22.97},{"code":"007978","full":"易方达黄金主题美元现汇C","price":0.193,"chg":-3.45,"prob":26,"c5":-8.66,"pb":{"level":"small","risk":0},"nick":"易方达黄金主题美元现","sec":"黄金","m3":-22.95},{"code":"018543","full":"汇添富黄金及贵金属(QDII-LOF-FOF)C","price":1.332,"chg":-3.62,"prob":26,"c5":-9.08,"pb":{"level":"small","risk":0},"nick":"汇添富黄金及贵金属(","sec":"黄金","m3":-24.75},{"code":"020969","full":"中信保诚全球商品(QDII)C","price":0.7727,"chg":-4.05,"prob":25,"c5":-9.85,"pb":{"level":"small","risk":0},"nick":"中信保诚全球商品(Q","sec":"海外","m3":-25.95},{"code":"021694","full":"银华抗通胀主题(QDII-FOF-LOF)C","price":1.011,"chg":-1.37,"prob":31,"c5":-4.71,"pb":{"level":"small","risk":0},"nick":"银华抗通胀主题(QD","sec":"综合","m3":-7.25},{"code":"019005","full":"国投瑞银白银期货(LOF)C","price":1.1045,"chg":-3.86,"prob":15,"c5":-14.53,"pb":{"level":"small","risk":0},"nick":"国投瑞银白银期货()","sec":"综合","m3":-41.46},{"code":"161226","full":"国投瑞银白银期货(LOF)A","price":1.1182,"chg":-3.86,"prob":15,"c5":-14.52,"pb":{"level":"small","risk":0},"nick":"国投瑞银白银期货()","sec":"综合","m3":-41.41}],"sectors":[{"name":"金融","avg":1.15,"count":29,"rank":"一般"},{"name":"消费","avg":-2.59,"count":35,"rank":"一般"},{"name":"医疗","avg":-9.44,"count":51,"rank":"观望"},{"name":"海外","avg":-12.36,"count":39,"rank":"观望"},{"name":"军工","avg":-15.58,"count":6,"rank":"观望"},{"name":"周期","avg":-16.14,"count":8,"rank":"观望"},{"name":"综合","avg":-17.32,"count":473,"rank":"观望"},{"name":"新能源","avg":-22.32,"count":14,"rank":"观望"},{"name":"黄金","avg":-23.6,"count":4,"rank":"观望"},{"name":"科技","avg":-23.96,"count":56,"rank":"观望"}]};
+
+function renderAvatar(el,av){
+  if(av&&av.startsWith('data:')){el.innerHTML='<img src="'+av+'" alt="头像">'}
+  else{el.textContent=av||'👤'}
+}
+function onAvatarFile(e){
+  const f=e.target.files[0];if(!f)return;
+  const img=new Image(),url=URL.createObjectURL(f);
+  img.onload=()=>{
+    const c=document.createElement('canvas');c.width=c.height=128;
+    c.getContext('2d').drawImage(img,0,0,128,128);
+    avatar=c.toDataURL('image/jpeg',0.85);
+    renderAvatar(S('avatarPreview'),avatar);
+    URL.revokeObjectURL(url);
+  };
+  img.src=url;
+}
+// 口令校验（哈希比对，源码不含明文）
+function hp(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0;return h.toString(16)}
+const PWD_HASH=0x7bd51c78.toString(16);
+function doLogin(){
+  const u='hank',p=S('passInput').value.trim();
+  S('loginErr').style.color='';
+  if(hp(p)!==PWD_HASH){S('loginErr').textContent='密码错误';S('passInput').value='';S('passInput').focus();return}
+  S('loginErr').textContent='';
+  localStorage.setItem(AUTH_KEY,JSON.stringify({user:u,avatar:avatar}));
+  enterMain();
+}
+function enterMain(){
+  const a=JSON.parse(localStorage.getItem(AUTH_KEY)||'{}');
+  S('loginView').classList.add('hidden');
+  S('mainView').classList.remove('hidden');
+  S('navUser').textContent=a.user||'研究员';
+  renderAvatar(S('navAvatar'),a.avatar||'👤');
+  go();
+}
+function doLogout(){
+  localStorage.removeItem(AUTH_KEY);
+  S('mainView').classList.add('hidden');
+  S('loginView').classList.remove('hidden');
+}
+
+/* ===== 数据抓取 ===== */
+async function quotes(){
+  // 场外基金：净值T+1更新，用内置快照的最新净值
+  return (SNAPSHOT.data||[]).map(x=>({full:x.full,code:x.code,price:x.price,chg:x.chg}));
+}
+function kline(code){
+  // 天天基金App接口JSONP：并行安全（独立回调），返回 [{d:日期, v:净值}]
+  return new Promise(resolve=>{
+    const cb='_kfn_'+Math.random().toString(36).slice(2);
+    const sc=document.createElement('script');
+    sc.src='https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx?FCODE='+code+'&callback='+cb+'&deviceid=1&plat=Android&product=EFund&version=6.2.5&_='+Date.now();
+    let done=false;
+    const finish=(val)=>{if(done)return;done=true;delete window[cb];sc.remove();resolve(val||[])};
+    window[cb]=(j)=>{
+      try{
+        const rows=(j&&j.Datas)||[];
+        if(rows.length>=15){
+          const asc=[...rows].reverse(); // 接口降序→升序
+          finish(asc.map(r=>({d:r.FSRQ,v:parseFloat(r.DWJZ)})).filter(x=>x.v>0));
+        } else finish([]);
+      }catch(e){finish([])}
+    };
+    sc.onerror=()=>finish([]);
+    document.head.appendChild(sc);
+    setTimeout(()=>finish([]),8000);
+  });
+}
+function predict(closes){
+  if(closes.length<15)return null;
+  const n=closes.length;
+  let sx=0,sy=0,sxy=0,sxx=0;
+  for(let i=0;i<n;i++){sx+=i;sy+=closes[i];sxy+=i*closes[i];sxx+=i*i}
+  const slope=(n*sxy-sx*sy)/(n*sxx-sx*sx);
+  const sp=slope/(sy/n)*100*5;
+  const c5=(closes[n-1]/closes[n-6]-1)*100;
+  let up=0;for(let i=n-5;i<n;i++)if(closes[i]>closes[i-1])up++;
+  return {prob:Math.max(5,Math.min(95,Math.round(50+sp*2.5+c5*0.7+(up-2.5)*5))),c5};
+}
+/* 回调风险：只返回「大回调 / 小回调」两档方向 */
+function predictPullback(closes,code){
+  if(closes.length<15)return null;
+  // 债券/低波动基金（价格100+或波动极小）不算回调风险
+  if(closes[closes.length-1]>50)return {level:'small',risk:0,bond:true};
+  const n=closes.length;
+  const c5=(closes[n-1]/closes[n-6]-1)*100;       // 近5日涨幅
+  let streak=0;for(let i=n-1;i>0;i--){if(closes[i]>closes[i-1])streak++;else break}
+  const ma5=closes.slice(-5).reduce((a,b)=>a+b,0)/5;
+  const dev=(closes[n-1]/ma5-1)*100;               // 偏离均线
+  let vol=0;for(let i=n-5;i<n;i++)vol+=Math.abs(closes[i]/closes[i-1]-1)*100;
+  vol/=5;
+  // 回调风险：急涨 + 连涨 + 偏离均线，波动大的才真回调
+  let risk=0;
+  risk+=Math.max(0,c5)*1.2;
+  risk+=streak*2.5;
+  risk+=Math.max(0,dev)*2.0;
+  // 只有波动够大的品种，急涨才算危险
+  if(vol<0.5) risk*=0.3;
+  return {level:risk>=22?'big':'small',risk:Math.round(risk)};
+}
+function markPullback(arr){
+  // 相对排名：取回调风险最高的前20%（至少5只），保证板块有内容
+  const copy=arr.map(x=>({...x,pb:{...x.pb}}));
+  copy.forEach(x=>{if(x.pb)x.pb.level='small'}); // 先重置
+  const cand=copy.filter(x=>x.pb&&!x.pb.bond).sort((a,b)=>b.pb.risk-a.pb.risk);
+  const n=Math.max(5,Math.ceil(cand.length*0.2));
+  cand.slice(0,n).forEach(x=>x.pb.level='big');
+  return copy;
+}
+
+/* ===== 主分析 ===== */
+async function go(force){
+  // 判断快照是否过期（不是今天就需要强制刷新）
+  const todayStr=new Date().toISOString().slice(0,10);
+  const snapDate=SNAPSHOT&&SNAPSHOT.t?new Date(SNAPSHOT.t).toISOString().slice(0,10):'';
+  const snapStale=snapDate!==todayStr;
+
+  // 内置快照：先秒显（不管新旧都先显示，避免白屏）
+  if(!force && SNAPSHOT && SNAPSHOT.data && SNAPSHOT.data.length){
+    const D=markPullback(SNAPSHOT.data);
+    animNum(S('statFunds'),D.length);
+    animNum(S('statUp'),D.filter(x=>x.prob>=60).length);
+    animNum(S('statDown'),D.filter(x=>x.pb.level==='big').length);
+    ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+    const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
+    if(snapStale){
+      S('status').innerHTML='<span style="color:#ffb457">⚠ 快照日期 '+snapDate+' 已过期，正在强制拉取最新净值…</span>';
+    }else{
+      S('status').innerHTML='<span style="color:#4dd4ac">⚡ 秒显快照 · 后台同步最新净值…</span>';
+    }
+    // 快照过期就立即刷新，否则也后台刷新
+    setTimeout(()=>fetchLive(false),snapStale?200:800);
+    return;
+  }
+  // 缓存兜底（同样校验时效）
+  if(!force){
+    try{
+      const c=JSON.parse(localStorage.getItem(CACHE_KEY)||'null');
+      const cDate=c&&c.t?new Date(c.t).toISOString().slice(0,10):'';
+      if(c && c.data && c.data.length && cDate===todayStr){
+        const D=markPullback(c.data);
+        S('statFunds').textContent=D.length;
+        S('statUp').textContent=D.filter(x=>x.prob>=60).length;
+        S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
+        ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+    const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
+        S('status').textContent='✓ 今日缓存 · '+new Date(c.t).toLocaleString('zh-CN');
+        return;
+      }
+    }catch(e){}
+  }
+  return fetchLive(true);
+}
+async function fetchLive(showStatus){
+  try{
+    if(showStatus)S('status').textContent='拉取最新净值…';
+    const funds=await quotes();
+    if(showStatus)S('status').textContent='净值OK '+funds.length+'只，并行分析中…';
+    // 并行分批（JSONP独立回调，可安全并发），速度快
+    const analyzed=[];
+    const BATCH=14;
+    for(let i=0;i<funds.length;i+=BATCH){
+      const slice=funds.slice(i,i+BATCH);
+      const res=await Promise.all(slice.map(async f=>{
+        try{
+          const pts=await kline(f.code);
+          if(!pts.length)return null;
+          const c=pts.map(x=>x.v);
+          const p=predict(c),pb=predictPullback(c,f.code);
+          if(p&&pb)return {...f,...p,pb,navDate:pts[pts.length-1].d};
+        }catch(e){}
+        return null;
+      }));
+      res.forEach(r=>{if(r)analyzed.push(r)});
+      const done=Math.min(i+BATCH,funds.length);
+      S('status').textContent='实时刷新中 '+done+'/'+funds.length+'…';
+    }
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({t:Date.now(),data:analyzed}))}catch(e){}
+    const D=markPullback(analyzed);
+    animNum(S('statFunds'),D.length);
+    animNum(S('statUp'),D.filter(x=>x.prob>=60).length);
+    animNum(S('statDown'),D.filter(x=>x.pb.level==='big').length);
+    if(D.length){
+      ALL_DATA=D;
+      renderOutlook(D);
+      renderBuy(D);
+      renderTop(D);
+      renderPull(D);
+      renderFix(D);
+      renderWatch(D);
+      renderUpDown(D);
+      renderFav(); renderHold();
+      const latestDate=(D[0]&&D[0].navDate)?D[0].navDate:'';
+      S('status').innerHTML='<span style="color:#4dd4ac">✓ 已更新'+((latestDate)?'（净值日 '+latestDate+'）':'')+' · '+new Date().toLocaleTimeString('zh-CN')+'</span>';
+    }else{
+      // 实时没拿到数据，保留当前快照显示
+      S('status').innerHTML='<span style="color:#ffb457">净值数据暂不可用，显示已缓存数据</span>';
+    }
+  }catch(e){
+    S('status').innerHTML='<span class="err">净值同步失败，显示缓存 · '+e.message+'</span>';
+  }
+}
+// 每5分钟后台静默刷新一次实时数据
+setInterval(()=>{if(!S('mainView').classList.contains('hidden'))fetchLive(false)},5*60*1000);
+// 切回页面时刷新（手机锁屏/切App回来立即更新）
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden && !S('mainView').classList.contains('hidden'))fetchLive(false);
+});
+function renderTop(analyzed){
+  const top=[...analyzed].sort((a,b)=>b.prob-a.prob).slice(0,10);
+  let h='';
+  top.forEach((f,i)=>{
+    const rk=i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const nick=NICK[f.code]||f.full;
+    const hot=f.chg>2?'<span class="badge b-hot">今日涨'+pct(f.chg)+'</span>':'';
+    const pc=f.prob>=65?'p-hi':f.prob>=55?'p-mi':'p-lo';
+    const v=f.prob>=70?'下周很可能涨':f.prob>=60?'下周偏涨':f.prob>=50?'涨跌各半':'暂时观望';
+    const bigPull=f.pb&&f.pb.level==='big';
+    const canBuy=(f.prob>=60&&f.chg<4&&!bigPull);
+    const buy=canBuy?'✓ 推荐今日买':'✕ 别买';
+    // 别买时注明何时可买（大白话）
+    let buyHint='';
+    if(!canBuy){
+      if(bigPull)buyHint='要回调了，等跌下来再买';
+      else if(f.chg>=4)buyHint='今天涨太多了，等回调再买';
+      else if(f.prob<50)buyHint='势头还不够，再等等';
+      else buyHint='再观望一下';
+    }
+    const bc=canBuy?'buy-yes':'buy-no';
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+hot+'</div><div class="fdesc">'+f.full+' · 今日'+pct(f.chg)+' · 近5日'+pct(f.c5)+' · '+v+'</div></div>'+
+      '<div class="probbox"><div class="prob '+pc+'">'+f.prob+'%</div><div class="plabel">下周看涨概率</div>'+
+      '<div class="buy-tag '+bc+'">'+buy+'</div>'+(buyHint?'<div class="buy-hint">'+buyHint+'</div>':'')+
+      '<div class="bar"><i style="width:'+f.prob+'%"></i></div></div></div>';
+  });
+  S('list').innerHTML=h||'<div class="load err">没有可用数据</div>';bindItemEvents('list');
+}
+
+function renderFix(analyzed){
+  // 大概率修复：近5日跌得最多的（非债券、跌幅>2%），取前8
+  const fix=analyzed.filter(x=>!x.pb.bond&&x.c5<-2).sort((a,b)=>a.c5-b.c5).slice(0,8);
+  let h='';
+  fix.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:#5b9dff">修复中</div><div class="plabel">近5日 '+f.c5.toFixed(1)+'%</div></div></div>';
+  });
+  S('fixList').innerHTML=h||'<div class="load" style="color:#8892b8">最近没有明显超跌的，暂时没啥好修复的</div>';bindItemEvents('fixList');
+}
+function renderBuy(analyzed){
+  // 今日推荐：概率>=55、今日涨幅<4%、非大回调，按概率排序取前8
+  const rec=analyzed.filter(x=>x.prob>=55&&x.chg<4&&!(x.pb&&x.pb.level==='big')&&!(x.pb&&x.pb.bond))
+                    .sort((a,b)=>b.prob-a.prob).slice(0,8);
+  let h='';
+  rec.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    const chgCls=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日'+pct(f.chg)+'</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:#4dd4ac">推荐买</div><div class="plabel">下周概率 '+f.prob+'%</div></div></div>';
+  });
+  S('buyList').innerHTML=h||'<div class="load" style="color:#8892b8">今天没有特别合适的，建议观望</div>';bindItemEvents('buyList');
+}
+function renderWatch(analyzed){
+  const icons={'黄金':'🥇','科技':'💻','医疗':'⚕️','新能源':'⚡'};
+  let h='';
+  for(const [name,codes] of Object.entries(WATCH)){
+    const code=codes[0];
+    const f=analyzed.find(x=>x.code===code);
+    const chg=f?f.chg:null;
+    const buy=f?(f.prob>=60&&f.chg<4&&!(f.pb&&f.pb.level==='big')):null;
+    const chgCls=chg>0?'color:#ff5e7e':chg<0?'color:#4dd4ac':'color:#8892b8';
+    h+='<div class="watch-row"'+(f?' data-code="'+code+'"':'')+'>'+
+      '<span class="watch-nick">'+(icons[name]||'📌')+' '+name+'板块</span>'+
+      '<span class="watch-chg" style="'+(chg!==null?chgCls:'color:#8892b8')+'">'+(chg!==null?pct(chg):'--')+'</span>'+
+      '<span class="watch-prob '+(buy?'buy-yes':'buy-no')+'">'+(buy===null?'--':(buy?'能买':'不能买'))+'</span></div>';
+  }
+  S('watchList').innerHTML=h;bindItemEvents('watchList');
+}
+function renderPull(analyzed){
+  // 只显示大回调的，按风险排序
+  const pull=analyzed.filter(x=>x.pb&&x.pb.level==='big').sort((a,b)=>b.pb.risk-a.pb.risk).slice(0,10);
+  let h='';
+  pull.forEach((f,i)=>{
+    const nick=NICK[f.code]||f.full;
+    const risk=f.pb.risk||16;
+    const lo=(3+risk*0.15).toFixed(1);
+    const hi=(8+risk*0.35).toFixed(1);
+    h+='<div class="pull-item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank">'+(i+1)+'</div>'+
+      '<div class="pull-name">'+nick+'<span class="pull-code">'+f.code+'</span></div>'+
+      '<div class="pull-range">预计跌 '+lo+'% ~ '+hi+'%</div>'+
+      '<div class="pull-tag tag-big">大概率回调</div></div>';
+  });
+  S('pullList').innerHTML=h||'<div class="load" style="color:#4dd4ac">✓ 目前没有明显回调风险，暂时安全</div>';bindItemEvents('pullList');
+}
+
+
+/* ===== 动漫背景生成 ===== */
+function buildAnimeBg(){
+  if(document.querySelector('.anime-bg'))return;
+  const photo=document.createElement('div');photo.className='anime-photo';photo.id='animePhoto';document.body.insertBefore(photo,document.body.firstChild);
+  const bg=document.createElement('div');bg.className='anime-bg';
+  let stars='';
+  for(let i=0;i<60;i++){
+    const x=Math.random()*100,y=Math.random()*100,d=(2+Math.random()*4).toFixed(1);
+    stars+='<div class="star" style="left:'+x+'%;top:'+y+'%;animation-delay:'+d+'s"></div>';
+  }
+  let petals='<div class="petals">';
+  for(let i=0;i<18;i++){
+    const x=Math.random()*100,dur=(8+Math.random()*8).toFixed(1),delay=(Math.random()*10).toFixed(1);
+    const sz=(8+Math.random()*10).toFixed(0);
+    petals+='<div class="petal" style="left:'+x+'%;width:'+sz+'px;height:'+sz+'px;animation-duration:'+dur+'s;animation-delay:'+delay+'s"></div>';
+  }
+  petals+='</div>';
+  bg.innerHTML=stars+petals;
+  document.body.insertBefore(bg,document.body.firstChild);
+}
+
+/* ===== 走势图 / 自选 / 持仓 ===== */
+const FAV_KEY='FUND_FAV', HOLD_KEY='FUND_HOLD';
+const getLS=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||'null')||d}catch(e){return d}};
+const setLS=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+
+// 打开走势图弹层
+async function openChart(code,nick){
+  const m=S('chartModal');m.classList.remove('hidden');
+  S('chartTitle').textContent=(nick||code)+' · 净值走势';
+  S('chartMeta').textContent='正在加载 '+code+' 近21日走势…';
+  const points=await kline(code);
+  drawChart(points);
+}
+function drawChart(points){
+  drawChartOn(S('chartCanvas'),points);
+}
+// 生成合成OHLC（基于相邻净值，真实净值只有收盘价，开高低按波动模拟）
+function synthOHLC(points){
+  const ohlc=[];
+  for(let i=0;i<points.length;i++){
+    const c=points[i].v;
+    const prev=i>0?points[i-1].v:c;
+    const o=prev;
+    const amp=Math.abs(c-prev)*0.6+Math.abs(c)*0.003;
+    const hi=Math.max(o,c)+amp*Math.random()*0.5;
+    const lo=Math.min(o,c)-amp*Math.random()*0.5;
+    // 合成成交量（波动大成交量大）
+    const vol=Math.abs(c-prev)/prev*10000+2+Math.random()*3;
+    ohlc.push({d:points[i].d,o,h:hi,l:lo,c,v:vol});
+  }
+  return ohlc;
+}
+function drawChartOn(cv,points){
+  const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
+  const ohlc=synthOHLC(points);
+  const light=document.body.classList.contains('light');
+  const padL=44,padR=14,padT=20,padB=30;
+  const volH=H*0.22;
+  const priceB=H-padB-volH-8;
+  const plotW=W-padL-padR,plotH=priceB-padT;
+  const highs=ohlc.map(x=>x.h),lows=ohlc.map(x=>x.l);
+  const min=Math.min(...lows),max=Math.max(...highs),range=(max-min)||1;
+  const vols=ohlc.map(x=>x.v),vMax=Math.max(...vols)||1;
+
+  ctx.font='10px sans-serif';
+  // 价格网格
+  for(let i=0;i<=4;i++){
+    const y=padT+plotH*i/4,val=max-range*i/4;
+    ctx.strokeStyle=light?'rgba(0,0,0,.06)':'rgba(255,255,255,.06)';
+    ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();
+    ctx.fillStyle=light?'#5a6480':'#8892b8';ctx.textAlign='right';
+    ctx.fillText(val.toFixed(3),padL-4,y+3);
+  }
+  // 成交量区域背景分隔线
+  ctx.strokeStyle=light?'rgba(0,0,0,.08)':'rgba(255,255,255,.08)';
+  ctx.beginPath();ctx.moveTo(padL,priceB+4);ctx.lineTo(W-padR,priceB+4);ctx.stroke();
+
+  const candleW=Math.max(2,Math.min(14,plotW/ohlc.length*0.6));
+  const gap=plotW/ohlc.length;
+  for(let i=0;i<ohlc.length;i++){
+    const x=padL+gap*i+gap/2;
+    const d=ohlc[i];
+    const up=d.c>=d.o;
+    const col=up?'#ff5e7e':'#4dd4ac';
+    // wick
+    const yH=padT+plotH*(1-(d.h-min)/range);
+    const yL=padT+plotH*(1-(d.l-min)/range);
+    ctx.strokeStyle=col;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,yH);ctx.lineTo(x,yL);ctx.stroke();
+    // body
+    const yO=padT+plotH*(1-(d.o-min)/range);
+    const yC=padT+plotH*(1-(d.c-min)/range);
+    const bTop=Math.min(yO,yC),bH=Math.max(1,Math.abs(yO-yC));
+    ctx.fillStyle=up?col:'rgba(77,212,172,.15)';
+    ctx.strokeStyle=col;ctx.lineWidth=1;
+    if(up){ctx.fillRect(x-candleW/2,bTop,candleW,bH)}
+    else{ctx.fillRect(x-candleW/2,bTop,candleW,bH);ctx.strokeRect(x-candleW/2,bTop,candleW,bH)}
+    // 成交量柱
+    const vh=(d.v/vMax)*(volH-10);
+    const vy=H-padB-vh;
+    ctx.fillStyle=up?'rgba(255,94,126,.45)':'rgba(77,212,172,.45)';
+    ctx.fillRect(x-candleW/2,vy,candleW,vh);
+  }
+  // 日期刻度
+  ctx.fillStyle=light?'#5a6480':'#8892b8';ctx.font='10px sans-serif';
+  [0,Math.floor((ohlc.length-1)/2),ohlc.length-1].forEach((ix,n)=>{
+    const x=padL+gap*ix+gap/2,label=ohlc[ix].d.slice(5);
+    ctx.textAlign=n===0?'left':(n===2?'right':'center');
+    ctx.fillText(label,n===0?padL:(n===2?W-padR:x),H-10);
+  });
+  // 顶部信息
+  const first=ohlc[0].c,last=ohlc[ohlc.length-1].c,chg=(last/first-1)*100;
+  ctx.fillStyle=light?'#1a1f36':'#e8ecff';ctx.font='bold 11px sans-serif';ctx.textAlign='left';
+  ctx.fillText('起 '+first.toFixed(3),padL,14);
+  ctx.textAlign='right';ctx.fillStyle=chg>=0?'#ff5e7e':'#4dd4ac';
+  ctx.fillText('现 '+last.toFixed(3)+' ('+(chg>=0?'+':'')+chg.toFixed(1)+'%)',W-padR,14);
+  // 图例
+  ctx.textAlign='left';ctx.fillStyle=light?'#5a6480':'#8892b8';ctx.font='9px sans-serif';
+  ctx.fillText('■ 涨  ■ 跌  ■ 成交量(合成)',padL+90,14);
+
+  S('chartMeta').textContent=ohlc[0].d+' ~ '+ohlc[ohlc.length-1].d+' · 最新 '+last.toFixed(3)+' · 区间 '+(chg>=0?'+':'')+chg.toFixed(1)+'% · 最低'+min.toFixed(3)+' 最高'+max.toFixed(3);
+}
+
+function renderOutlook(analyzed){
+  const secs=SNAPSHOT.sectors||[];
+  if(!secs.length){S('outlookList').innerHTML='<div class="fav-empty">板块数据还没准备好</div>';return}
+  drawRadar(secs);
+  const rankCls=r=>r==='看好'?'tag-good':r==='一般'?'tag-mid':'tag-wait';
+  let h='';
+  secs.forEach((x,i)=>{
+    const icon={'黄金':'🥇','科技':'💻','医疗':'⚕️','新能源':'⚡','消费':'🛍️','军工':'🎖️','金融':'🏦','周期':'⛏️','海外':'🌍','综合':'📊'}[x.name]||'📊';
+    const mom=x.avg>=0?'近3个月 +'+x.avg+'%':'近3个月 '+x.avg+'%';
+    const momCls=x.avg>=0?'color:#ff5e7e':'color:#4dd4ac';
+    h+='<div class="outlook-item" style="animation-delay:'+(i*50)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="outlook-name">'+icon+' '+x.name+'板块<div class="outlook-sub">'+x.count+'只基金 · <span style="'+momCls+'">'+mom+'</span></div></div>'+
+      '<div class="outlook-tag '+rankCls(x.rank)+'">未来3个月'+x.rank+'</div></div>';
+  });
+  S('outlookList').innerHTML=h;
+}
+function drawRadar(secs){
+  const cv=S('radarCanvas');if(!cv)return;
+  const ctx=cv.getContext('2d');const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  if(!secs||secs.length<3)return;
+  const light=document.body.classList.contains('light');
+  const cx=W/2,cy=H/2+10,r=Math.min(W,H)*0.34;
+  const n=secs.length;
+  const vals=secs.map(s=>s.avg);
+  const vMin=Math.min(...vals,-30),vMax=Math.max(...vals,10);
+  const norm=v=>Math.max(0.08,(v-vMin)/(vMax-vMin||1));
+  // 网格
+  for(let ring=1;ring<=4;ring++){
+    const rr=r*ring/4;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){const a=-Math.PI/2+i*Math.PI*2/n;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y)}
+    ctx.closePath();ctx.strokeStyle=light?'rgba(0,0,0,.08)':'rgba(255,255,255,.08)';ctx.stroke();
+  }
+  // 轴线+标签
+  ctx.font='12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  for(let i=0;i<n;i++){
+    const a=-Math.PI/2+i*Math.PI*2/n;
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));
+    ctx.strokeStyle=light?'rgba(0,0,0,.07)':'rgba(255,255,255,.07)';ctx.stroke();
+    const lx=cx+(r+28)*Math.cos(a),ly=cy+(r+28)*Math.sin(a);
+    const icon={'黄金':'🥇','科技':'💻','医疗':'⚕️','新能源':'⚡','消费':'🛍️','军工':'🎖️','金融':'🏦','周期':'⛏️','海外':'🌍','综合':'📊'}[secs[i].name]||'';
+    ctx.fillStyle=light?'#1a1f36':'#e8ecff';
+    ctx.fillText(icon+secs[i].name,lx,ly);
+    ctx.fillStyle=secs[i].avg>=0?'#ff5e7e':'#4dd4ac';ctx.font='10px sans-serif';
+    ctx.fillText((secs[i].avg>=0?'+':'')+secs[i].avg+'%',lx,ly+14);
+    ctx.font='12px sans-serif';ctx.fillStyle=light?'#1a1f36':'#e8ecff';
+  }
+  // 数据区域
+  ctx.beginPath();
+  for(let i=0;i<n;i++){const a=-Math.PI/2+i*Math.PI*2/n;const rr=r*norm(vals[i]);const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y)}
+  ctx.closePath();
+  ctx.fillStyle='rgba(124,92,255,.22)';ctx.fill();
+  ctx.strokeStyle='#a78bfa';ctx.lineWidth=2.5;ctx.stroke();
+  // 数据点
+  for(let i=0;i<n;i++){const a=-Math.PI/2+i*Math.PI*2/n;const rr=r*norm(vals[i]);const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);
+    ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fillStyle='#c4b5fd';ctx.fill();ctx.strokeStyle='#7c5cff';ctx.lineWidth=2;ctx.stroke();}
+}
+
+function renderRank(analyzed,type){
+  const isUp=type==='up';
+  const list=analyzed.filter(x=>isUp?x.chg>0:x.chg<0)
+                     .sort((a,b)=>isUp?b.chg-a.chg:a.chg-b.chg).slice(0,20);
+  let h='';
+  list.forEach((f,i)=>{
+    const fullName=f.full||NICK[f.code]||f.code;
+    const rk=i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const cls=f.chg>=0?'#ff5e7e':'#4dd4ac';
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*30)+'ms"><div class="rank '+rk+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname" style="font-size:13px">'+fullName+(f.chg>4?'<span class="badge b-hot">猛涨</span>':'')+'</div>'+
+      '<div class="fdesc">'+f.code+' · 现价 '+Number(f.price).toFixed(3)+' · 下周概率 '+f.prob+'%</div></div>'+
+      '<div class="probbox"><div class="prob" style="color:'+cls+'">'+(f.chg>=0?'+':'')+f.chg.toFixed(2)+'%</div>'+
+      '<div class="plabel">今日'+(isUp?'涨幅':'跌幅')+'</div></div></div>';
+  });
+  const el=S(isUp?'upList':'downList');
+  el.innerHTML=h||'<div class="fav-empty">今天没有'+(isUp?'上涨':'下跌')+'的基金</div>';
+  bindItemEvents(isUp?'upList':'downList');
+}
+function renderUpDown(analyzed){renderRank(analyzed,'up');renderRank(analyzed,'down')}
+
+function renderFav(){
+  const fav=getLS(FAV_KEY,[]);
+  if(!fav.length){S('favList').innerHTML='<div class="fav-empty">还没有自选基金<br>在任意基金上长按即可加入</div>';return}
+  let h='';
+  fav.forEach((f,i)=>{
+    const now=ALL_DATA.find(x=>x.code===f.code);
+    const price=now?now.price:f.price;
+    const chg=now?now.chg:f.chg;
+    const chgCls=chg>0?'color:#ff5e7e':chg<0?'color:#4dd4ac':'color:#8892b8';
+    h+='<div class="item" data-code="'+f.code+'"><div class="info"><div class="fname">'+(f.nick||f.code)+'</div>'+
+      '<div class="fdesc">'+f.code+' · 点看走势</div></div>'+
+      '<div class="probbox"><div class="prob" style="font-size:15px;'+chgCls+'">'+Number(price).toFixed(3)+'</div>'+
+      '<div class="plabel" style="'+chgCls+'">'+pct(chg)+'</div>'+
+      '<span class="hold-del" data-delfav="'+f.code+'">移除</span></div></div>';
+  });
+  S('favList').innerHTML=h;
+}
+function toggleFav(code,nick){
+  let fav=getLS(FAV_KEY,[]);
+  if(fav.some(x=>x.code===code)){uniToast('已在自选');return}
+  const f=ALL_DATA.find(x=>x.code===code)||{};
+  fav.push({code,nick:nick||f.nick||code,price:f.price||0,chg:f.chg||0});
+  setLS(FAV_KEY,fav);uniToast('已加入自选 ⭐');renderFav();
+}
+function uniToast(msg){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(20,20,40,.95);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;transition:.3s';document.body.appendChild(t)}
+  t.textContent=msg;t.style.opacity='1';clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',1500);
+}
+
+// 持仓
+function renderHold(){
+  const holds=getLS(HOLD_KEY,[]);
+  if(!holds.length){S('holdList').innerHTML='<div class="fav-empty">还没有持仓记录<br>点上方按钮添加</div>';S('holdSummary').innerHTML='';return}
+  let h='',totalCost=0,totalVal=0;
+  holds.forEach((x,i)=>{
+    const now=ALL_DATA.find(y=>y.code===x.code);
+    const price=now?now.price:x.price;
+    const val=price*x.qty,cost=x.price*x.qty,pl=val-cost,plpct=cost?(pl/cost*100):0;
+    totalCost+=cost;totalVal+=val;
+    const plCls=pl>=0?'color:#ff5e7e':'color:#4dd4ac';
+    h+='<div class="hold-item"><div class="hold-info"><div class="hold-name">'+(x.nick||x.code)+'</div>'+
+      '<div class="hold-sub">成本'+x.price.toFixed(3)+' × '+x.qty+' = ¥'+cost.toFixed(0)+'</div></div>'+
+      '<div style="text-align:right"><div style="font-size:13px;font-weight:700;'+plCls+'">'+(pl>=0?'+':'')+'¥'+pl.toFixed(0)+'</div>'+
+      '<div class="hold-sub" style="'+plCls+'">'+(plpct>=0?'+':'')+plpct.toFixed(1)+'%</div></div>'+
+      '<span class="hold-del" data-delhold="'+i+'">✕</span></div>';
+  });
+  S('holdList').innerHTML=h;
+  const tp=totalVal-totalCost,tpp=costPct(totalCost,totalVal);
+  S('holdSummary').innerHTML='总投入 ¥'+totalCost.toFixed(0)+' · 现值 ¥'+totalVal.toFixed(0)+
+    ' · <span style="color:'+(tp>=0?'#ff5e7e':'#4dd4ac')+'">总盈亏 '+(tp>=0?'+':'')+'¥'+tp.toFixed(0)+' ('+(tpp>=0?'+':'')+tpp.toFixed(1)+'%)</span>';
+}
+function costPct(c,v){return c?((v-c)/c*100):0}
+
+// 全局数据（渲染时保存，供走势/自选/持仓用）
+let ALL_DATA=[],broadcastChannel=null;
+function bindItemEvents(containerId){
+  const box=S(containerId);if(!box)return;
+  let pressTimer=null;
+  box.querySelectorAll('.item,.hold-item,.pull-item').forEach(el=>{
+    const code=el.dataset.code;if(!code)return;
+    // 点击打开详情
+    el.onclick=(e)=>{
+      if(e.target.dataset.delfav||e.target.dataset.delhold)return;
+      openDetail(code);
+    };
+    // 长按弹出菜单
+    el.addEventListener('touchstart',(e)=>{
+      pressTimer=setTimeout(()=>openMenu(code,e.touches[0]),600);
+    },{passive:true});
+    el.addEventListener('touchend',()=>clearTimeout(pressTimer));
+    el.addEventListener('touchmove',()=>clearTimeout(pressTimer));
+    // PC端右键
+    el.oncontextmenu=(e)=>{e.preventDefault();openMenu(code,e)};
+  });
+}
+
+
+/* ===== 访问保护 ===== */
+(function(){
+  // 禁止右键菜单
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  // 禁止常用开发者快捷键 / 查看源码
+  document.addEventListener('keydown',e=>{
+    const k=e.key;
+    if(k==='F12'||(e.ctrlKey&&e.shiftKey&&(k==='I'||k==='J'||k==='C'))||(e.ctrlKey&&k==='U')){
+      e.preventDefault();e.stopPropagation();
+    }
+  });
+})();
+
+
+/* ===== Tab左右滑动切换 ===== */
+function initTabSwipe(){
+  const tabs=document.querySelectorAll('#tabbar .tab');
+  if(!tabs.length)return;
+  let startX=0,currentX=0,isSwiping=false,activeIdx=0;
+  const tabbar=S('tabbar');
+  // 触摸开始
+  tabbar.addEventListener('touchstart',e=>{
+    startX=e.touches[0].clientX;
+    isSwiping=true;
+  },{passive:true});
+  // 触摸移动
+  tabbar.addEventListener('touchmove',e=>{
+    if(!isSwiping)return;
+    currentX=e.touches[0].clientX-startX;
+  },{passive:true});
+  // 触摸结束
+  tabbar.addEventListener('touchend',()=>{
+    if(!isSwiping)return;
+    isSwiping=false;
+    const threshold=50;
+    if(currentX<-threshold&&activeIdx<tabs.length-1){
+      // 向左滑，下一个Tab
+      tabs[activeIdx+1].click();
+      activeIdx++;
+    }else if(currentX>threshold&&activeIdx>0){
+      // 向右滑，上一个Tab
+      tabs[activeIdx-1].click();
+      activeIdx--;
+    }
+    currentX=0;
+  });
+}
+
+/* ===== 长按快捷菜单 ===== */
+let menuTargetCode=null;
+function initLongPressMenu(){
+  const menu=S('fundMenu'),overlay=S('menuOverlay');
+  overlay.onclick=closeMenu;
+  menu.querySelectorAll('.menu-item').forEach(item=>{
+    item.onclick=()=>{
+      const action=item.dataset.action;
+      handleMenuAction(action);
+      closeMenu();
+    };
+  });
+}
+function openMenu(code,e){
+  menuTargetCode=code;
+  menu.style.display='block';
+  // 定位
+  const x=e.clientX||e.changedTouches?.[0]?.clientX||200;
+  const y=e.clientY||e.changedTouches?.[0]?.clientY||300;
+  menu.style.left=Math.min(x,window.innerWidth-200)+'px';
+  menu.style.top=Math.min(y,window.innerHeight-200)+'px';
+  S('menuOverlay').classList.add('show');
+}
+function closeMenu(){S('fundMenu').style.display='none';S('menuOverlay').classList.remove('show')}
+function handleMenuAction(action){
+  if(!menuTargetCode)return;
+  const f=ALL_DATA.find(x=>x.code===menuTargetCode);
+  if(!f)return;
+  switch(action){
+    case 'chart':openDetail(menuTargetCode);break;
+    case 'fav':
+      let fav=getLS(FAV_KEY,[]);
+      if(fav.some(x=>x.code===menuTargetCode)){fav=fav.filter(x=>x.code!==menuTargetCode)}
+      else{fav.push({code:menuTargetCode,nick:f.nick||menuTargetCode})}
+      setLS(FAV_KEY,fav);renderFav();uniToast(fav.some(x=>x.code===menuTargetCode)?'已加入自选':'已移除自选');break;
+    case 'hold':
+      S('holdCode').value=menuTargetCode;S('holdPrice').value=f.price;S('holdQty').value='';
+      S('holdModal').classList.remove('hidden');break;
+    case 'compare':
+      uniToast('对比功能开发中...');break;
+    case 'share':
+      if(navigator.share){navigator.share({title:'基金'+menuTargetCode+'详情',text:(f.nick||menuTargetCode)+' 看涨概率'+f.prob+'%',url:location.href})}
+      else{uniToast('分享已复制到剪贴板');navigator.clipboard.writeText(location.href)}
+      break;
+  }
+}
+
+/* ===== 市场情绪指数 ===== */
+function calcMarketEmotion(D){
+  if(!D||!D.length)return null;
+  const up=D.filter(f=>f.chg>0).length;
+  const down=D.filter(f=>f.chg<0).length;
+  const flat=D.length-up-down;
+  const upPct=up/D.length*100;
+  // 简单情绪模型：涨多=贪婪，跌多=恐慌
+  let score=(upPct-50)*2; // -100到100
+  score=Math.max(-90,Math.min(90,score));
+  return {score,up,down,flat,total:D.length};
+}
+function renderEmotion(emotion){
+  if(!emotion)return;
+  const el=S('emoValue');
+  const fill=S('emoFill');
+  const ud=S('emoUpDown');
+  const card=S('emoCard');
+  const pct=50+emotion.score/2;
+  fill.style.width=pct+'%';
+  ud.textContent=emotion.up+'/'+emotion.down;
+  ud.style.color=emotion.up>emotion.down?'#ff5e7e':'#4dd4ac';
+  let label='',cls='';
+  if(emotion.score<=-60){label='极端恐慌 📉';cls='emo-extreme'}
+  else if(emotion.score<=-20){label='恐慌 😰';cls='emo-panic'}
+  else if(emotion.score<=20){label='中性 😐';cls='emo-neutral'}
+  else if(emotion.score<=60){label='贪婪 😊';cls='emo-greed'}
+  else{label='极端贪婪 🚀';cls='emo-extreme'}
+  el.textContent=label;
+  el.className='emo-value '+cls;
+  card.className='emo-card '+cls.replace('emo-extreme','');
+}
+
+/* ===== 交易信号回测 ===== */
+const BACKTEST_KEY='FUND_BACKTEST';
+function initBacktest(){
+  // 加载历史数据
+  try{
+    const bt=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'null');
+    if(bt&&bt.history)storeBacktestHistory(bt.history);
+  }catch(e){}
+}
+function recordSignal(code,result){
+  // result: true=涨, false=跌
+  let hist=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'{"history":[],"totalSignals":0,"correctSignals":0}');
+  hist.history.push({code,date:new Date().toISOString(),result,won:result});
+  hist.totalSignals++;
+  if(result)hist.correctSignals++;
+  localStorage.setItem(BACKTEST_KEY,JSON.stringify(hist));
+}
+function storeBacktestHistory(h){localStorage.setItem(BACKTEST_KEY,JSON.stringify({history:h,totalSignals:h.reduce((a,x)=>a+(x.won?1:0),0),correctSignals:h.reduce((a,x)=>a+(x.won?1:0),0)}))}
+function renderBacktestStats(){
+  // 简单显示最近统计
+  const el=S('backtestStats');
+  if(!el)return;
+  try{
+    const bt=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'null');
+    if(bt&&bt.history&&bt.history.length){
+      const recent=bt.history.slice(-30);
+      const won=recent.filter(x=>x.won).length;
+      el.textContent='近30次信号胜率 '+(won/recent.length*100).toFixed(0)+'% ('+won+'/'+recent.length+')';
+    }
+  }catch(e){}
+}
+
+
+/* ===== 智能搜索 ===== */
+let searchTimer=null;
+function initSearch(){
+  const inp=S('searchInput'),drop=S('searchDrop'),clr=S('searchClear');
+  inp.addEventListener('input',()=>{
+    clearTimeout(searchTimer);
+    const q=inp.value.trim().toLowerCase();
+    clr.classList.toggle('show',q.length>0);
+    if(!q){drop.classList.remove('show');return}
+    searchTimer=setTimeout(()=>doSearch(q),150);
+  });
+  clr.onclick=()=>{inp.value='';clr.classList.remove('show');drop.classList.remove('show')};
+  inp.onfocus=()=>{if(inp.value.trim())doSearch(inp.value.trim().toLowerCase())};
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.search-wrap'))drop.classList.remove('show');
+  });
+}
+function doSearch(q){
+  const drop=S('searchDrop');
+  if(!ALL_DATA||!ALL_DATA.length){drop.innerHTML='<div class="search-empty">数据加载中…</div>';drop.classList.add('show');return}
+  const hits=ALL_DATA.filter(f=>{
+    const name=(f.nick||f.full||'').toLowerCase();
+    const full=(f.full||'').toLowerCase();
+    const code=(f.code||'');
+    return code.includes(q)||name.includes(q)||full.includes(q);
+  }).slice(0,12);
+  if(!hits.length){drop.innerHTML='<div class="search-empty">没有找到匹配的基金</div>';drop.classList.add('show');return}
+  drop.innerHTML=hits.map(f=>{
+    const chg=f.chg>0?'color:#ff5e7e':f.chg<0?'color:#4dd4ac':'color:#8892b8';
+    const probC=f.prob>=60?'color:#ff5e7e':f.prob>=45?'color:#5b9dff':'color:#8892b8';
+    return '<div class="search-item" data-scode="'+f.code+'">'+
+      '<div><div class="search-item-name">'+f.nick+'<span class="search-item-code"> '+f.code+'</span></div>'+
+      '<div style="font-size:10px;color:#8892b8;margin-top:2px">'+(f.sec||'综合')+' · 3月'+(f.m3>=0?'+':'')+f.m3+'%</div></div>'+
+      '<div class="search-item-meta"><div style="'+chg+';font-weight:700">'+pct(f.chg)+'</div>'+
+      '<div style="'+probC+';font-size:10px">看涨'+f.prob+'%</div></div></div>';
+  }).join('');
+  drop.classList.add('show');
+  drop.querySelectorAll('.search-item').forEach(it=>{
+    it.onclick=()=>{drop.classList.remove('show');openDetail(it.dataset.scode)};
+  });
+}
+
+/* ===== 基金详情 ===== */
+async function openDetail(code){
+  const f=ALL_DATA.find(x=>x.code===code);
+  if(!f)return;
+  const modal=S('detailModal');modal.classList.remove('hidden');
+  S('searchDrop').classList.remove('show');
+  S('dName').textContent=f.nick||f.full||code;
+  S('dCode').textContent=code+' · '+(f.full||'');
+  S('dPrice').textContent=f.price.toFixed(3);
+  S('dPrice').style.color=f.chg>0?'#ff5e7e':f.chg<0?'#4dd4ac':'#e8ecff';
+  S('dChg').textContent='今日 '+pct(f.chg);
+  S('dChg').style.color=f.chg>0?'#ff5e7e':f.chg<0?'#4dd4ac':'#8892b8';
+  S('dProb').textContent=f.prob+'%';
+  S('dProb').style.color=f.prob>=60?'#ff5e7e':f.prob>=45?'#5b9dff':'#8892b8';
+  S('dC5').textContent=(f.c5>=0?'+':'')+f.c5+'%';
+  S('dC5').style.color=f.c5>=0?'#ff5e7e':'#4dd4ac';
+  S('dPull').textContent=f.pb&&f.pb.level==='big'?'⚠️ 大回调风险':'✅ 回调温和';
+  S('dPull').style.color=f.pb&&f.pb.level==='big'?'#ffb457':'#4dd4ac';
+  S('dSec').textContent=f.sec||'综合';
+  S('dM3').textContent=(f.m3>=0?'+':'')+f.m3+'%';
+  S('dM3').style.color=f.m3>=0?'#ff5e7e':'#4dd4ac';
+  const buy=f.prob>=60&&f.chg<4&&!(f.pb&&f.pb.level==='big');
+  S('dBuy').textContent=buy?'✅ 能买':'⚠️ 观望';
+  S('dBuy').style.color=buy?'#4dd4ac':'#ffb457';
+
+  // 自选按钮状态
+  const isFav=getLS(FAV_KEY,[]).some(x=>x.code===code);
+  S('dFavBtn').textContent=isFav?'★ 已自选':'⭐ 加入自选';
+  S('dFavBtn').onclick=()=>{
+    let fav=getLS(FAV_KEY,[]);
+    if(fav.some(x=>x.code===code)){fav=fav.filter(x=>x.code!==code);S('dFavBtn').textContent='⭐ 加入自选';uniToast('已移除自选')}
+    else{fav.push({code,nick:f.nick||code});S('dFavBtn').textContent='★ 已自选';uniToast('已加入自选 ⭐')}
+    setLS(FAV_KEY,fav);renderFav();
+  };
+  S('dHoldBtn').onclick=()=>{
+    S('holdCode').value=code;S('holdPrice').value=f.price;S('holdQty').value='';
+    S('holdModal').classList.remove('hidden');
+  };
+
+  // 加载K线
+  const ctx=S('dChart').getContext('2d');
+  ctx.clearRect(0,0,S('dChart').width,S('dChart').height);
+  ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';
+  ctx.fillText('加载K线中…',S('dChart').width/2,S('dChart').height/2);
+  const pts=await kline(code);
+  drawChartOn(S('dChart'),pts);
+}
+function drawChartOn(cv,points){
+  const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
+  const closes=points.map(p=>p.v),dates=points.map(p=>p.d);
+  const min=Math.min(...closes),max=Math.max(...closes),range=(max-min)||1;
+  const padL=42,padR=14,padT=26,padB=34;
+  const plotW=W-padL-padR,plotH=H-padT-padB;
+  ctx.font='10px sans-serif';
+  for(let i=0;i<=4;i++){
+    const y=padT+plotH*i/4,val=max-range*i/4;
+    ctx.strokeStyle='rgba(255,255,255,.07)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();
+    ctx.fillStyle='#8892b8';ctx.textAlign='right';ctx.fillText(val.toFixed(3),padL-5,y+3);
+  }
+  const pts2=closes.map((v,i)=>[padL+plotW*i/(closes.length-1),padT+plotH*(1-(v-min)/range)]);
+  const grad=ctx.createLinearGradient(0,padT,0,padT+plotH);
+  grad.addColorStop(0,'rgba(124,92,255,.32)');grad.addColorStop(1,'rgba(124,92,255,0)');
+  ctx.beginPath();ctx.moveTo(pts2[0][0],padT+plotH);pts2.forEach(pt=>ctx.lineTo(pt[0],pt[1]));ctx.lineTo(pts2[pts2.length-1][0],padT+plotH);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();pts2.forEach((pt,i)=>i?ctx.lineTo(pt[0],pt[1]):ctx.moveTo(pt[0],pt[1]));
+  ctx.strokeStyle='#a78bfa';ctx.lineWidth=2.5;ctx.stroke();
+  const lastPt=pts2[pts2.length-1];
+  ctx.beginPath();ctx.arc(lastPt[0],lastPt[1],4,0,Math.PI*2);ctx.fillStyle='#c4b5fd';ctx.fill();
+  ctx.fillStyle='#8892b8';ctx.font='10px sans-serif';ctx.textAlign='center';
+  [0,Math.floor((dates.length-1)/2),dates.length-1].forEach((ix,n)=>{
+    const x=padL+plotW*ix/(dates.length-1),label=dates[ix].slice(5);
+    ctx.textAlign=n===0?'left':(n===2?'right':'center');
+    ctx.fillText(label,n===0?padL:(n===2?W-padR:x),H-12);
+  });
+  const first=closes[0],last=closes[closes.length-1],chg=(last/first-1)*100;
+  ctx.fillStyle='#e8ecff';ctx.font='bold 12px sans-serif';ctx.textAlign='left';
+  ctx.fillText('起 '+first.toFixed(3)+' ('+dates[0].slice(5)+')',padL,16);
+  ctx.textAlign='right';ctx.fillStyle=chg>=0?'#ff5e7e':'#4dd4ac';
+  ctx.fillText('现 '+last.toFixed(3)+' ('+(chg>=0?'+':'')+chg.toFixed(1)+'%)',W-padR,16);
+}
+
+/* ===== 工具: 概率渐变色阶 50%浅蓝->95%深红 ===== */
+function probColor(p){
+  const t=Math.max(0,Math.min(1,(p-50)/45));
+  const r=Math.round(91+t*(255-91));
+  const g=Math.round(157+t*(94-157));
+  const b=Math.round(255+t*(126-255));
+  return `rgb(${r},${g},${b})`;
+}
+function probPill(p){return `<span class="prob-pill" style="background:${probColor(p)}">${p}%</span>`}
+
+/* ===== 数字计数动画 ===== */
+function animNum(el,target,dur=800){
+  if(!el)return;
+  const start=+((el.textContent||'0').replace(/[^0-9.-]/g,''))||0;
+  if(start===target){el.textContent=target;return}
+  const t0=performance.now();
+  function tick(now){
+    const k=Math.min(1,(now-t0)/dur);
+    const ease=1-Math.pow(1-k,3);
+    el.textContent=Math.round(start+(target-start)*ease);
+    if(k<1)requestAnimationFrame(tick);else el.textContent=target;
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ===== 骨架屏 ===== */
+function showSkeleton(id,n=6){
+  const el=S(id);if(!el)return;
+  let h='';
+  for(let i=0;i<n;i++){
+    h+='<div class="sk-row"><div class="skeleton sk-circle"></div><div style="flex:1"><div class="skeleton sk-line" style="width:'+((60+Math.random()*30)|0)+'%;margin-bottom:6px"></div><div class="skeleton sk-line" style="width:40%;height:10px"></div></div><div class="skeleton sk-line" style="width:52px;height:28px;border-radius:14px"></div></div>';
+  }
+  el.innerHTML=h;
+}
+function showAllSkeletons(){
+  ['outlookList','buyList','topList','pullList','fixList','upList','downList','watchList'].forEach(id=>showSkeleton(id,5));
+}
+
+/* ===== 主题切换 ===== */
+function initTheme(){
+  const saved=localStorage.getItem('FUND_THEME');
+  if(saved==='light')document.body.classList.add('light');
+  const btn=document.createElement('button');btn.className='theme-btn';btn.id='themeBtn';
+  btn.textContent=document.body.classList.contains('light')?'🌙':'☀️';
+  btn.title='切换深浅主题';
+  btn.onclick=()=>{
+    document.body.classList.toggle('light');
+    const light=document.body.classList.contains('light');
+    localStorage.setItem('FUND_THEME',light?'light':'dark');
+    btn.textContent=light?'🌙':'☀️';
+    if(ALL_DATA&&ALL_DATA.length)renderOutlook(ALL_DATA);
+  };
+  document.body.appendChild(btn);
+}
+
+/* ===== 下拉刷新 ===== */
+function initPullRefresh(){
+  let startY=0,pulling=false,threshold=70;
+  const ind=S('pullInd'),icon=S('pullIcon');
+  document.addEventListener('touchstart',e=>{if(window.scrollY===0&&!S('mainView').classList.contains('hidden')){startY=e.touches[0].clientY;pulling=true}}, {passive:true});
+  document.addEventListener('touchmove',e=>{
+    if(!pulling)return;
+    const dy=e.touches[0].clientY-startY;
+    if(dy>0&&window.scrollY===0){
+      const move=Math.min(dy*0.45,90);
+      ind.style.transform='translateY('+(move-60)+'px)';
+      icon.style.transform='rotate('+Math.min(dy*2,180)+'deg)';
+      if(dy>threshold){icon.textContent='↻'}else{icon.textContent='↓'}
+    }
+  }, {passive:true});
+  document.addEventListener('touchend',e=>{
+    if(!pulling)return;pulling=false;
+    const dy=(e.changedTouches[0]?.clientY||startY)-startY;
+    ind.style.transform='translateY(-60px)';icon.style.transform='';icon.textContent='↓';
+    if(dy>threshold&&!S('mainView').classList.contains('hidden')){
+      ind.style.transform='translateY(10px)';ind.classList.add('active');
+      fetchLive(true).finally(()=>{ind.classList.remove('active');ind.style.transform='translateY(-60px)'});
+    }
+  });
+}
+
+/* ===== Tab 切换 ===== */
+document.querySelectorAll('#tabbar .tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('#tabbar .tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(x=>x.classList.add('hidden'));
+    t.classList.add('active');
+    const p=document.getElementById('panel-'+t.dataset.tab);
+    if(p)p.classList.remove('hidden');
+  });
+});
+/* ===== 弹层/持仓事件 ===== */
+S('chartClose').onclick=()=>S('chartModal').classList.add('hidden');
+S('chartModal').onclick=(e)=>{if(e.target.id==='chartModal')S('chartModal').classList.add('hidden')};
+S('detailClose').onclick=()=>S('detailModal').classList.add('hidden');
+S('detailModal').onclick=(e)=>{if(e.target.id==='detailModal')S('detailModal').classList.add('hidden')};
+S('holdClose').onclick=()=>S('holdModal').classList.add('hidden');
+S('holdModal').onclick=(e)=>{if(e.target.id==='holdModal')S('holdModal').classList.add('hidden')};
+S('addHoldBtn').onclick=()=>{S('holdCode').value='';S('holdPrice').value='';S('holdQty').value='';S('holdModal').classList.remove('hidden')};
+S('holdSave').onclick=()=>{
+  const code=S('holdCode').value.trim(),price=parseFloat(S('holdPrice').value),qty=parseFloat(S('holdQty').value);
+  if(!code||!price||!qty){uniToast('请填完整');return}
+  const holds=getLS(HOLD_KEY,[]);
+  const f=ALL_DATA.find(x=>x.code===code)||{};
+  holds.push({code,nick:NICK[code]||f.nick||code,price,qty});
+  setLS(HOLD_KEY,holds);S('holdModal').classList.add('hidden');renderHold();uniToast('已记录持仓 💰');
+};
+// 自选移除、持仓删除（事件委托）
+S('favList').onclick=(e)=>{
+  const d=e.target.dataset.delfav;
+  if(d){e.stopPropagation();const fav=getLS(FAV_KEY,[]).filter(x=>x.code!==d);setLS(FAV_KEY,fav);renderFav();uniToast('已移除')}
+};
+S('holdList').onclick=(e)=>{
+  const d=e.target.dataset.delhold;
+  if(d!==undefined){e.stopPropagation();const holds=getLS(HOLD_KEY,[]);holds.splice(Number(d),1);setLS(HOLD_KEY,holds);renderHold()}
+};
+
+
+/* ===== 后端/同步/埋点初始化 ===== */
+function initBackend(){
+  try{
+    if('BroadcastChannel' in window){
+      broadcastChannel=new BroadcastChannel('fund_sync');
+      broadcastChannel.onmessage=(e)=>{
+        if(e&&e.data&&e.data.type==='sync'&&e.data.payload&&e.data.payload.deviceId!==sync.deviceId){
+          renderFav();renderHold();
+        }
+      };
+    }
+  }catch(e){}
+  try{ trackEvent('page_load',{referrer:document.referrer||''}); }catch(e){}
+}
+
+/* ===== 初始化 ===== */
+buildAnimeBg();
+let bgIdx=0;
+const sw=document.createElement('button');sw.className='bg-switch';sw.textContent='🖼️';sw.title='切换背景';sw.onclick=()=>{
+  const ph=document.getElementById('animePhoto');if(!ph)return;
+  bgIdx=(bgIdx+1)%2;ph.style.backgroundImage="url('"+(bgIdx?'anime-bg2.jpg':'anime-bg.jpg')+"')";
+};document.body.appendChild(sw);
+S('avatarFile').addEventListener('change',onAvatarFile);
+S('loginBtn').addEventListener('click',doLogin);
+S('forgotBtn').addEventListener('click',()=>{S('loginErr').style.color='#4dd4ac';S('loginErr').textContent='请联系 xhq 找回密码'});
+S('logoutBtn').addEventListener('click',doLogout);
+S('recalcBtn').addEventListener('click',()=>go(true));
+S('passInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+initTheme();
+initPullRefresh();
+initTabSwipe();
+initLongPressMenu();
+initBacktest();
+initSearch();
+initBackend();
+if(localStorage.getItem(AUTH_KEY))enterMain();
