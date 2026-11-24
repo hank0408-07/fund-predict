@@ -75,9 +75,13 @@ body::before{
 .avatar-preview img{width:100%;height:100%;object-fit:cover}
 .avatar-tip{text-align:left;font-size:11px;color:var(--mut);line-height:1.7}
 .avatar-tip b{color:var(--txt)}
-  font-size:24px;padding:8px 0;border-radius:12px;cursor:pointer;
-  background:rgba(255,255,255,.05);border:1px solid transparent;transition:.2s;
+.primary-btn{
+  width:100%;font-size:16px;font-weight:700;padding:14px 0;border-radius:12px;cursor:pointer;
+  background:var(--acc);border:0;color:#fff;transition:.2s;
+  box-shadow:0 6px 20px rgba(124,92,255,.35);
 }
+.primary-btn:hover{transform:translateY(-1px);box-shadow:0 8px 26px rgba(124,92,255,.5)}
+.primary-btn:active{transform:translateY(0)}
 .upload-btn{
   display:inline-block;font-size:12px;color:var(--blue);cursor:pointer;
   border:1px dashed var(--line);border-radius:10px;padding:8px 14px;margin-bottom:16px;transition:.2s;
