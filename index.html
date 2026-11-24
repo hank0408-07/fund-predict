@@ -30,7 +30,7 @@ body{
   .anime-photo{width:100vw;background-size:cover;background-position:center top;opacity:.32}
   .anime-photo::after{background:linear-gradient(180deg,rgba(7,11,31,.35),rgba(7,11,31,.72))}
 }
-.bg-switch{position:fixed;bottom:14px;right:14px;z-index:20;
+.track-btn{position:fixed;top:70px;left:12px;z-index:30;width:32px;height:32px;border-radius:50%;background:rgba(124,92,255,.3);border:1px solid rgba(124,92,255,.5);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s}.track-btn:hover{background:rgba(124,92,255,.5)}.bg-switch{position:fixed;bottom:14px;right:14px;z-index:20;
   width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);
   background:rgba(20,20,40,.6);backdrop-filter:blur(8px);color:#fff;font-size:18px;
   cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.4)}
@@ -306,7 +306,8 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
 </style>
 </head>
 <body>
-<div class="pull-indicator" id="pullInd"><div class="pi-inner" id="pullIcon">↓</div></div>
+<button class="track-btn" onclick="showAnalytics()" title="埋点统计">📊</button>
+    <div class="pull-indicator" id="pullInd"><div class="pi-inner" id="pullIcon">↓</div></div>
 <div class="orb a"></div><div class="orb b"></div><div class="orb c"></div>
 
 <div class="wrap">
@@ -499,6 +500,18 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
   </div>
 </div>
 
+
+<!-- 埋点统计面板（开发者用） -->
+<div id="analyticsPanel" class="modal hidden">
+  <div class="modal-box glass" style="max-width:400px">
+    <div class="modal-head"><span class="modal-close" onclick="S('analyticsPanel').classList.add('hidden')">✕</span></div>
+    <h2 style="margin-bottom:14px">📊 埋点统计</h2>
+    <div id="analyticsContent" style="font-size:13px;line-height:1.8;color:var(--mut)">
+      加载中...
+    </div>
+    <button onclick="clearAnalytics()" style="margin-top:14px;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--txt);cursor:pointer">清除记录</button>
+  </div>
+</div>
 <!-- 基金详情弹层 -->
 <div id="detailModal" class="modal hidden">
   <div class="modal-box detail-box glass">
@@ -536,6 +549,72 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
   <div class="menu-item" data-action="compare"><span class="menu-icon">🔀</span><span>对比</span></div>
   <div class="menu-item" data-action="share"><span class="menu-icon">📤</span><span>分享</span></div>
 </div>
+
+
+/* ===== 后端API配置 ===== */
+const API_CONFIG = {
+  baseUrl: '', // Cloudflare Worker地址，部署后填入
+  enabled: true,
+  // 本地回退方案
+  fallback: {
+    funds: ['https://fundmobapi.eastmoney.com/FundMApi/FundNetDiagram.ashx'],
+    market: 'local'
+  }
+};
+
+/* ===== 简单LocalStorage云同步（模拟Supabase效果）===== */
+class LocalCloud {
+  constructor() {
+    this.prefix = 'FUND_SYNC_';
+    this.deviceId = localStorage.getItem('device_id') || this.genId();
+    localStorage.setItem('device_id', this.deviceId);
+  }
+  genId() {
+    return 'dev_' + Math.random().toString(36).slice(2, 10);
+  }
+  async save(key, data) {
+    try {
+      const payload = { deviceId: this.deviceId, ts: Date.now(), data };
+      localStorage.setItem(this.prefix + key, JSON.stringify(payload));
+      // 广播到其他tab
+      broadcastChannel.postMessage({ type: 'sync', key, payload });
+    } catch (e) { console.error('Sync error:', e); }
+  }
+  async load(key) {
+    try {
+      const raw = localStorage.getItem(this.prefix + key);
+      if (!raw) return null;
+      const { data } = JSON.parse(raw);
+      return data;
+    } catch { return null; }
+  }
+}
+const sync = new LocalCloud();
+
+/* ===== 埋点系统 ===== */
+const TRACK_EVENTS = 'FUND_TRACK';
+function trackEvent(eventType, data = {}) {
+  try {
+    const events = JSON.parse(localStorage.getItem(TRACK_EVENTS) || '[]');
+    events.push({ event: eventType, data, ts: Date.now() });
+    localStorage.setItem(TRACK_EVENTS, JSON.stringify(events.slice(-100)));
+    // 发送到服务端（如果配置了API）
+    if (API_CONFIG.enabled && API_CONFIG.baseUrl) {
+      fetch(API_CONFIG.baseUrl + '/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: eventType, data, deviceId: sync.deviceId })
+      }).catch(() => {});
+    }
+  } catch (e) {}
+}
+// 自动追踪Tab切换
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) trackEvent('tab_switch', { tab: tab.dataset.tab });
+  const item = e.target.closest('[data-code]');
+  if (item) trackEvent('fund_click', { code: item.dataset.code });
+});
 
 <script>
 /* ===== 通俗名字映射 ===== */
@@ -1596,6 +1675,8 @@ initPullRefresh();
 initTabSwipe();
 initLongPressMenu();
 initBacktest();
+initSearch();
+initBackend();
 initSearch();
 if(localStorage.getItem(AUTH_KEY))enterMain();
 </script>
