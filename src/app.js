@@ -470,7 +470,8 @@ function synthOHLC(points){
   return ohlc;
 }
 function drawChartOn(cv,points){
-  const ctx=cv.getContext('2d');
+  if(!cv||!cv.getContext)return;
+  const ctx=cv.getContext('2d');if(!ctx)return;
   const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const ohlc=synthOHLC(points);
@@ -545,7 +546,7 @@ function drawChartOn(cv,points){
 function renderOutlook(analyzed){
   const secs=SNAPSHOT.sectors||[];
   if(!secs.length){S('outlookList').innerHTML='<div class="fav-empty">板块数据还没准备好</div>';return}
-  drawRadar(secs);
+  try{drawRadar(secs)}catch(e){}
   const rankCls=r=>r==='看好'?'tag-good':r==='一般'?'tag-mid':'tag-wait';
   let h='';
   secs.forEach((x,i)=>{
@@ -559,8 +560,10 @@ function renderOutlook(analyzed){
   S('outlookList').innerHTML=h;
 }
 function drawRadar(secs){
+  try{
   const cv=S('radarCanvas');if(!cv)return;
-  const ctx=cv.getContext('2d');const W=cv.width,H=cv.height;
+  const ctx=cv.getContext&&cv.getContext('2d');if(!ctx)return;
+  const W=cv.width,H=cv.height;
   ctx.clearRect(0,0,W,H);
   if(!secs||secs.length<3)return;
   const light=document.body.classList.contains('light');
@@ -599,6 +602,7 @@ function drawRadar(secs){
   // 数据点
   for(let i=0;i<n;i++){const a=-Math.PI/2+i*Math.PI*2/n;const rr=r*norm(vals[i]);const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);
     ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fillStyle='#c4b5fd';ctx.fill();ctx.strokeStyle='#7c5cff';ctx.lineWidth=2;ctx.stroke();}
+  }catch(e){console.warn('drawRadar失败',e)}
 }
 
 function renderRank(analyzed,type){
@@ -951,7 +955,8 @@ async function openDetail(code){
   drawChartOn(S('dChart'),pts);
 }
 function drawChartOn(cv,points){
-  const ctx=cv.getContext('2d');
+  if(!cv||!cv.getContext)return;
+  const ctx=cv.getContext('2d');if(!ctx)return;
   const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const closes=points.map(p=>p.v),dates=points.map(p=>p.d);
