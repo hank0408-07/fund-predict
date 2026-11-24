@@ -259,6 +259,27 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
 .pull-indicator{position:fixed;top:0;left:0;right:0;height:60px;display:flex;align-items:center;justify-content:center;z-index:50;pointer-events:none;transform:translateY(-60px);transition:transform .2s}
 .pull-indicator .pi-inner{width:36px;height:36px;border-radius:50%;background:rgba(124,92,255,.9);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;box-shadow:0 4px 14px rgba(124,92,255,.4);transition:transform .2s}
 .pull-indicator.active .pi-inner{animation:spin .8s linear infinite}
+
+/* Tab滑动提示 */
+.swipe-hint{text-align:center;font-size:10px;color:var(--mut);padding:4px;opacity:.7}
+/* 长按快捷菜单 */
+.fund-menu{position:fixed;z-index:100;background:rgba(20,20,50,.96);backdrop-filter:blur(12px);
+  border:1px solid var(--line);border-radius:14px;padding:6px;min-width:180px;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);display:none;animation:menuIn .15s ease;}
+@keyframes menuIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.menu-item{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--txt);transition:.15s}
+.menu-item:hover{background:rgba(124,92,255,.15)}
+.menu-icon{font-size:18px;width:24px;text-align:center}
+.menu-overlay{position:fixed;inset:0;z-index:99;display:none}
+.menu-overlay.show{display:block}
+/* 市场情绪 */
+.emo-card{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.emo-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.emo-title{font-size:12px;color:var(--mut)}
+.emo-value{font-size:22px;font-weight:900}
+.emo-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px}
+.emo-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.emo-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--mut);margin-top:4px}
 /* 弹层 */
 .modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
 .modal.hidden{display:none!important}
@@ -344,6 +365,23 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
     </div>
 
 
+
+    <!-- 市场情绪 -->
+    <div class="card glass" id="emoCard">
+      <div class="emo-header">
+        <div>
+          <div class="emo-title">今日市场情绪</div>
+          <div class="emo-value" id="emoValue">分析中...</div>
+        </div>
+        <div style="text-align:right">
+          <div class="emo-title">涨跌家数</div>
+          <div style="font-size:14px;font-weight:700" id="emoUpDown">--/--</div>
+        </div>
+      </div>
+      <div class="emo-bar"><div class="emo-fill" id="emoFill" style="width:50%;background:linear-gradient(90deg,#ff5e7e,#ffb457,#4dd4ac)"></div></div>
+      <div class="emo-labels"><span>恐慌</span><span>悲观</span><span>中性</span><span>贪婪</span><span>狂热</span></div>
+      <div id="backtestStats" style="font-size:11px;color:var(--mut);margin-top:6px;text-align:center"></div>
+    </div>
     <!-- Tab 导航 -->
     <div class="tabbar glass" id="tabbar">
       <div class="tab active" data-tab="outlook">🔮 3月展望</div>
@@ -486,6 +524,17 @@ body.light .skeleton{background:linear-gradient(90deg,rgba(0,0,0,.04) 25%,rgba(0
 </div>
 
 
+</div>
+
+
+<!-- 长按快捷菜单 -->
+<div class="menu-overlay" id="menuOverlay"></div>
+<div class="fund-menu" id="fundMenu">
+  <div class="menu-item" data-action="chart"><span class="menu-icon">📈</span><span>看走势</span></div>
+  <div class="menu-item" data-action="fav"><span class="menu-icon">⭐</span><span>加自选</span></div>
+  <div class="menu-item" data-action="hold"><span class="menu-icon">💰</span><span>记持仓</span></div>
+  <div class="menu-item" data-action="compare"><span class="menu-icon">🔀</span><span>对比</span></div>
+  <div class="menu-item" data-action="share"><span class="menu-icon">📤</span><span>分享</span></div>
 </div>
 
 <script>
@@ -668,6 +717,7 @@ async function go(force){
     animNum(S('statUp'),D.filter(x=>x.prob>=60).length);
     animNum(S('statDown'),D.filter(x=>x.pb.level==='big').length);
     ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+    const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
     if(snapStale){
       S('status').innerHTML='<span style="color:#ffb457">⚠ 快照日期 '+snapDate+' 已过期，正在强制拉取最新净值…</span>';
     }else{
@@ -688,6 +738,7 @@ async function go(force){
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
         ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+    const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
         S('status').textContent='✓ 今日缓存 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
       }
@@ -1104,20 +1155,25 @@ function costPct(c,v){return c?((v-c)/c*100):0}
 let ALL_DATA=[];
 function bindItemEvents(containerId){
   const box=S(containerId);if(!box)return;
+  let pressTimer=null;
   box.querySelectorAll('.item,.hold-item,.pull-item').forEach(el=>{
     const code=el.dataset.code;if(!code)return;
+    // 点击打开详情
     el.onclick=(e)=>{
       if(e.target.dataset.delfav||e.target.dataset.delhold)return;
-      const nm=el.querySelector('.fname,.pull-name,.hold-name');
-      openChart(code,nm?nm.textContent:code);
+      openDetail(code);
     };
-    let timer=null;
-    el.oncontextmenu=(e)=>{e.preventDefault();toggleFav(code)};
-    el.addEventListener('touchstart',()=>{timer=setTimeout(()=>toggleFav(code),600)},{passive:true});
-    el.addEventListener('touchend',()=>clearTimeout(timer));
-    el.addEventListener('touchmove',()=>clearTimeout(timer));
+    // 长按弹出菜单
+    el.addEventListener('touchstart',(e)=>{
+      pressTimer=setTimeout(()=>openMenu(code,e.touches[0]),600);
+    },{passive:true});
+    el.addEventListener('touchend',()=>clearTimeout(pressTimer));
+    el.addEventListener('touchmove',()=>clearTimeout(pressTimer));
+    // PC端右键
+    el.oncontextmenu=(e)=>{e.preventDefault();openMenu(code,e)};
   });
 }
+
 
 /* ===== 访问保护 ===== */
 (function(){
@@ -1131,6 +1187,155 @@ function bindItemEvents(containerId){
     }
   });
 })();
+
+
+/* ===== Tab左右滑动切换 ===== */
+function initTabSwipe(){
+  const tabs=document.querySelectorAll('#tabbar .tab');
+  if(!tabs.length)return;
+  let startX=0,currentX=0,isSwiping=false,activeIdx=0;
+  const tabbar=S('tabbar');
+  // 触摸开始
+  tabbar.addEventListener('touchstart',e=>{
+    startX=e.touches[0].clientX;
+    isSwiping=true;
+  },{passive:true});
+  // 触摸移动
+  tabbar.addEventListener('touchmove',e=>{
+    if(!isSwiping)return;
+    currentX=e.touches[0].clientX-startX;
+  },{passive:true});
+  // 触摸结束
+  tabbar.addEventListener('touchend',()=>{
+    if(!isSwiping)return;
+    isSwiping=false;
+    const threshold=50;
+    if(currentX<-threshold&&activeIdx<tabs.length-1){
+      // 向左滑，下一个Tab
+      tabs[activeIdx+1].click();
+      activeIdx++;
+    }else if(currentX>threshold&&activeIdx>0){
+      // 向右滑，上一个Tab
+      tabs[activeIdx-1].click();
+      activeIdx--;
+    }
+    currentX=0;
+  });
+}
+
+/* ===== 长按快捷菜单 ===== */
+let menuTargetCode=null;
+function initLongPressMenu(){
+  const menu=S('fundMenu'),overlay=S('menuOverlay');
+  overlay.onclick=closeMenu;
+  menu.querySelectorAll('.menu-item').forEach(item=>{
+    item.onclick=()=>{
+      const action=item.dataset.action;
+      handleMenuAction(action);
+      closeMenu();
+    };
+  });
+}
+function openMenu(code,e){
+  menuTargetCode=code;
+  menu.style.display='block';
+  // 定位
+  const x=e.clientX||e.changedTouches?.[0]?.clientX||200;
+  const y=e.clientY||e.changedTouches?.[0]?.clientY||300;
+  menu.style.left=Math.min(x,W()-200)+'px';
+  menu.style.top=Math.min(y,W()-200)+'px';
+  S('menuOverlay').classList.add('show');
+}
+function closeMenu(){S('fundMenu').style.display='none';S('menuOverlay').classList.remove('show')}
+function W(){return window.innerWidth}
+function handleMenuAction(action){
+  if(!menuTargetCode)return;
+  const f=ALL_DATA.find(x=>x.code===menuTargetCode);
+  if(!f)return;
+  switch(action){
+    case 'chart':openDetail(menuTargetCode);break;
+    case 'fav':
+      let fav=getLS(FAV_KEY,[]);
+      if(fav.some(x=>x.code===menuTargetCode)){fav=fav.filter(x=>x.code!==menuTargetCode)}
+      else{fav.push({code:menuTargetCode,nick:f.nick||menuTargetCode})}
+      setLS(FAV_KEY,fav);renderFav();uniToast(fav.some(x=>x.code===menuTargetCode)?'已加入自选':'已移除自选');break;
+    case 'hold':
+      S('holdCode').value=menuTargetCode;S('holdPrice').value=f.price;S('holdQty').value='';
+      S('holdModal').classList.remove('hidden');break;
+    case 'compare':
+      uniToast('对比功能开发中...');break;
+    case 'share':
+      if(navigator.share){navigator.share({title:'基金'+menuTargetCode+'详情',text:(f.nick||menuTargetCode)+' 看涨概率'+f.prob+'%',url:location.href})}
+      else{uniToast('分享已复制到剪贴板');navigator.clipboard.writeText(location.href)}
+      break;
+  }
+}
+
+/* ===== 市场情绪指数 ===== */
+function calcMarketEmotion(D){
+  if(!D||!D.length)return null;
+  const up=D.filter(f=>f.chg>0).length;
+  const down=D.filter(f=>f.chg<0).length;
+  const flat=D.length-up-down;
+  const upPct=up/D.length*100;
+  // 简单情绪模型：涨多=贪婪，跌多=恐慌
+  let score=(upPct-50)*2; // -100到100
+  score=Math.max(-90,Math.min(90,score));
+  return {score,up,down,flat,total:D.length};
+}
+function renderEmotion(emotion){
+  if(!emotion)return;
+  const el=S('emoValue');
+  const fill=S('emoFill');
+  const ud=S('emoUpDown');
+  const card=S('emoCard');
+  const pct=50+emotion.score/2;
+  fill.style.width=pct+'%';
+  ud.textContent=emotion.up+'/'+emotion.down;
+  ud.style.color=emotion.up>emotion.down?'#ff5e7e':'#4dd4ac';
+  let label='',cls='';
+  if(emotion.score<=-60){label='极端恐慌 📉';cls='emo-extreme'}
+  else if(emotion.score<=-20){label='恐慌 😰';cls='emo-panic'}
+  else if(emotion.score<=20){label='中性 😐';cls='emo-neutral'}
+  else if(emotion.score<=60){label='贪婪 😊';cls='emo-greed'}
+  else{label='极端贪婪 🚀';cls='emo-extreme'}
+  el.textContent=label;
+  el.className='emo-value '+cls;
+  card.className='emo-card '+cls.replace('emo-extreme','');
+}
+
+/* ===== 交易信号回测 ===== */
+const BACKTEST_KEY='FUND_BACKTEST';
+function initBacktest(){
+  // 加载历史数据
+  try{
+    const bt=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'null');
+    if(bt&&bt.history)storeBacktestHistory(bt.history);
+  }catch(e){}
+}
+function recordSignal(code,result){
+  // result: true=涨, false=跌
+  let hist=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'{"history":[],"totalSignals":0,"correctSignals":0}');
+  hist.history.push({code,date:new Date().toISOString(),result,won:result});
+  hist.totalSignals++;
+  if(result)hist.correctSignals++;
+  localStorage.setItem(BACKTEST_KEY,JSON.stringify(hist));
+}
+function storeBacktestHistory(h){localStorage.setItem(BACKTEST_KEY,JSON.stringify({history:h,totalSignals:h.reduce((a,x)=>a+(x.won?1:0),0),correctSignals:h.reduce((a,x)=>a+(x.won?1:0),0)}))}
+function renderBacktestStats(){
+  // 简单显示最近统计
+  const el=S('backtestStats');
+  if(!el)return;
+  try{
+    const bt=JSON.parse(localStorage.getItem(BACKTEST_KEY)||'null');
+    if(bt&&bt.history&&bt.history.length){
+      const recent=bt.history.slice(-30);
+      const won=recent.filter(x=>x.won).length;
+      el.textContent='近30次信号胜率 '+(won/recent.length*100).toFixed(0)+'% ('+won+'/'+recent.length+')';
+    }
+  }catch(e){}
+}
+
 
 /* ===== 智能搜索 ===== */
 let searchTimer=null;
@@ -1388,6 +1593,9 @@ S('recalcBtn').addEventListener('click',()=>go(true));
 S('passInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 initTheme();
 initPullRefresh();
+initTabSwipe();
+initLongPressMenu();
+initBacktest();
 initSearch();
 if(localStorage.getItem(AUTH_KEY))enterMain();
 </script>
