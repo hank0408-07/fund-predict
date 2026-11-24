@@ -1026,7 +1026,7 @@ function synthOHLC(points){
 }
 function drawChartOn(cv,points){
   const ctx=cv.getContext('2d');
-  const cw=cv.width,ch=cv.height;ctx.clearRect(0,0,cw,ch);
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const ohlc=synthOHLC(points);
   const light=document.body.classList.contains('light');
@@ -1115,7 +1115,7 @@ function renderOutlook(analyzed){
 }
 function drawRadar(secs){
   const cv=S('radarCanvas');if(!cv)return;
-  const ctx=cv.getContext('2d');const cw=cv.width,ch=cv.height;
+  const ctx=cv.getContext('2d');const W=cv.width,H=cv.height;
   ctx.clearRect(0,0,W,H);
   if(!secs||secs.length<3)return;
   const light=document.body.classList.contains('light');
@@ -1327,7 +1327,6 @@ function openMenu(code,e){
   S('menuOverlay').classList.add('show');
 }
 function closeMenu(){S('fundMenu').style.display='none';S('menuOverlay').classList.remove('show')}
-function W(){return window.innerWidth}
 function handleMenuAction(action){
   if(!menuTargetCode)return;
   const f=ALL_DATA.find(x=>x.code===menuTargetCode);
@@ -1508,7 +1507,7 @@ async function openDetail(code){
 }
 function drawChartOn(cv,points){
   const ctx=cv.getContext('2d');
-  const cw=cv.width,ch=cv.height;ctx.clearRect(0,0,cw,ch);
+  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const closes=points.map(p=>p.v),dates=points.map(p=>p.d);
   const min=Math.min(...closes),max=Math.max(...closes),range=(max-min)||1;
@@ -1657,6 +1656,22 @@ S('holdList').onclick=(e)=>{
   const d=e.target.dataset.delhold;
   if(d!==undefined){e.stopPropagation();const holds=getLS(HOLD_KEY,[]);holds.splice(Number(d),1);setLS(HOLD_KEY,holds);renderHold()}
 };
+
+
+/* ===== 后端/同步/埋点初始化 ===== */
+function initBackend(){
+  try{
+    if('BroadcastChannel' in window){
+      broadcastChannel=new BroadcastChannel('fund_sync');
+      broadcastChannel.onmessage=(e)=>{
+        if(e&&e.data&&e.data.type==='sync'&&e.data.payload&&e.data.payload.deviceId!==sync.deviceId){
+          renderFav();renderHold();
+        }
+      };
+    }
+  }catch(e){}
+  try{ trackEvent('page_load',{referrer:document.referrer||''}); }catch(e){}
+}
 
 /* ===== 初始化 ===== */
 buildAnimeBg();
