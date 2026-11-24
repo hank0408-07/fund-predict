@@ -1025,7 +1025,7 @@ function synthOHLC(points){
 }
 function drawChartOn(cv,points){
   const ctx=cv.getContext('2d');
-  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  const cw=cv.width,ch=cv.height;ctx.clearRect(0,0,cw,ch);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const ohlc=synthOHLC(points);
   const light=document.body.classList.contains('light');
@@ -1114,7 +1114,7 @@ function renderOutlook(analyzed){
 }
 function drawRadar(secs){
   const cv=S('radarCanvas');if(!cv)return;
-  const ctx=cv.getContext('2d');const W=cv.width,H=cv.height;
+  const ctx=cv.getContext('2d');const cw=cv.width,ch=cv.height;
   ctx.clearRect(0,0,W,H);
   if(!secs||secs.length<3)return;
   const light=document.body.classList.contains('light');
@@ -1231,7 +1231,7 @@ function renderHold(){
 function costPct(c,v){return c?((v-c)/c*100):0}
 
 // 全局数据（渲染时保存，供走势/自选/持仓用）
-let ALL_DATA=[];
+let ALL_DATA=[],broadcastChannel=null;
 function bindItemEvents(containerId){
   const box=S(containerId);if(!box)return;
   let pressTimer=null;
@@ -1321,8 +1321,8 @@ function openMenu(code,e){
   // 定位
   const x=e.clientX||e.changedTouches?.[0]?.clientX||200;
   const y=e.clientY||e.changedTouches?.[0]?.clientY||300;
-  menu.style.left=Math.min(x,W()-200)+'px';
-  menu.style.top=Math.min(y,W()-200)+'px';
+  menu.style.left=Math.min(x,window.innerWidth-200)+'px';
+  menu.style.top=Math.min(y,window.innerHeight-200)+'px';
   S('menuOverlay').classList.add('show');
 }
 function closeMenu(){S('fundMenu').style.display='none';S('menuOverlay').classList.remove('show')}
@@ -1507,7 +1507,7 @@ async function openDetail(code){
 }
 function drawChartOn(cv,points){
   const ctx=cv.getContext('2d');
-  const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  const cw=cv.width,ch=cv.height;ctx.clearRect(0,0,cw,ch);
   if(!points||points.length<2){ctx.fillStyle='#8892b8';ctx.font='14px sans-serif';ctx.textAlign='center';ctx.fillText('暂无走势数据',W/2,H/2);return}
   const closes=points.map(p=>p.v),dates=points.map(p=>p.d);
   const min=Math.min(...closes),max=Math.max(...closes),range=(max-min)||1;
@@ -1676,6 +1676,7 @@ initTabSwipe();
 initLongPressMenu();
 initBacktest();
 initSearch();
+function initBackend(){}
 initBackend();
 initSearch();
 if(localStorage.getItem(AUTH_KEY))enterMain();
