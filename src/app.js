@@ -1210,7 +1210,7 @@ async function go(force){
     animNum(S('statFunds'),D.length);
     animNum(S('statUp'),D.filter(x=>x.prob>=60).length);
     animNum(S('statDown'),D.filter(x=>x.pb.level==='big').length);
-    ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+    ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderSprint(D); renderUpDown(D); renderFav(); renderHold();
     const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
     if(snapStale){
       S('status').innerHTML='<span style="color:#ffb457">⚠ 快照日期 '+snapDate+' 已过期，正在强制拉取最新净值…</span>';
@@ -1231,7 +1231,7 @@ async function go(force){
         S('statFunds').textContent=D.length;
         S('statUp').textContent=D.filter(x=>x.prob>=60).length;
         S('statDown').textContent=D.filter(x=>x.pb.level==='big').length;
-        ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderUpDown(D); renderFav(); renderHold();
+        ALL_DATA=D; renderOutlook(D); renderBuy(D); renderTop(D); renderPull(D); renderFix(D); renderWatch(D); renderSprint(D); renderUpDown(D); renderFav(); renderHold();
     const emotion=calcMarketEmotion(D);renderEmotion(emotion);renderBacktestStats();
         S('status').textContent='✓ 今日缓存 · '+new Date(c.t).toLocaleString('zh-CN');
         return;
@@ -1277,6 +1277,7 @@ async function fetchLive(showStatus){
       renderPull(D);
       renderFix(D);
       renderWatch(D);
+      renderSprint(D);
       renderUpDown(D);
       renderFav(); renderHold();
       const latestDate=(D[0]&&D[0].navDate)?D[0].navDate:'';
@@ -1295,6 +1296,38 @@ setInterval(()=>{if(!S('mainView').classList.contains('hidden'))fetchLive(false)
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden && !S('mainView').classList.contains('hidden'))fetchLive(false);
 });
+function renderSprint(analyzed){
+  // 冲刺榜：中期没跌(m3>-5)、下周看涨概率>=58、非大回调风险，按冲刺分排序取10
+  // 主候选：看涨概率>=55、中期没大跌、非大回调风险
+  let cands=analyzed.filter(x=>x.prob>=55&&x.m3>-8&&!(x.pb&&x.pb.level==='big'));
+  const scoredAll=analyzed.map(x=>({f:x,sc:x.prob*0.45+x.m3*0.9+x.c5*1.6+(x.chg>0?2:0)}))
+                          .sort((a,b)=>b.sc-a.sc);
+  if(cands.length<10){
+    // 候选不够10只（市场普遍弱），按冲刺分从高到低补齐，保证榜单始终10只
+    const picked=new Set(cands.map(x=>x.code));
+    for(const x of scoredAll){
+      if(picked.size>=10)break;
+      if(!picked.has(x.f.code)){cands.push(x.f);picked.add(x.f.code)}
+    }
+  }
+  const scored=cands.map(x=>({f:x,sc:x.prob*0.45+x.m3*0.9+x.c5*1.6+(x.chg>0?2:0)}))
+                    .sort((a,b)=>b.sc-a.sc).slice(0,10);
+  let h='';
+  scored.forEach(({f,sc},i)=>{
+    const nick=NICK[f.code]||f.full;
+    const verdict=sc>=40?'冲+10%概率高':sc>=30?'有望+10%，重点盯':'可能到，爆发力一般';
+    const vCls=sc>=40?'color:#ff5e7e;font-weight:800':sc>=30?'color:#ffb457;font-weight:800':'color:#8892b8';
+    const chgCls=f.chg>0?'color:#ff5e7e':'color:#4dd4ac';
+    const m3Cls=f.m3>=0?'color:#ff5e7e':'color:#4dd4ac';
+    h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
+      '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日<span style="'+chgCls+'">'+pct(f.chg)+'</span> · 近5日<span style="'+(f.c5>=0?'color:#ff5e7e':'color:#4dd4ac')+'">'+pct(f.c5)+'</span> · 3月<span style="'+m3Cls+'">'+(f.m3>=0?'+':'')+f.m3+'%</span></div></div>'+
+      '<div class="probbox"><div class="prob" style="'+vCls+'">'+verdict+'</div><div class="plabel">冲刺分 '+sc.toFixed(0)+' · 看涨概率 '+f.prob+'%</div>'+
+      '<div class="bar"><i style="width:'+Math.min(100,sc/0.7)+'%"></i></div></div></div>';
+  });
+  S('sprintList').innerHTML=h||'<div class="load" style="color:#8892b8">当前没有符合条件的强势基金，市场整体偏弱，建议观望等行情</div>';
+  bindItemEvents('sprintList');
+}
+
 function renderTop(analyzed){
   const top=[...analyzed].sort((a,b)=>b.prob-a.prob).slice(0,10);
   let h='';
