@@ -1310,19 +1310,24 @@ function renderSprint(analyzed){
       if(!picked.has(x.f.code)){cands.push(x.f);picked.add(x.f.code)}
     }
   }
-  const scored=cands.map(x=>({f:x,sc:x.prob*0.45+x.m3*0.9+x.c5*1.6+(x.chg>0?2:0)}))
+  // 保护：个别基金字段可能缺失，避免 NaN
+  const scored=cands.map(x=>({f:x,sc:(x.prob||0)*0.45+(x.m3||0)*0.9+(x.c5||0)*1.6+((x.chg||0)>0?2:0)}))
                     .sort((a,b)=>b.sc-a.sc).slice(0,10);
   let h='';
   scored.forEach(({f,sc},i)=>{
+    sc=sc||0;
     const nick=NICK[f.code]||f.full;
-    const verdict=sc>=40?'冲+10%概率高':sc>=30?'有望+10%，重点盯':'可能到，爆发力一般';
+    const buy=(f.prob>=55&&(f.chg||0)<4&&!(f.pb&&f.pb.level==='big'));
+    const buyTxt=buy?'值得买':'观望';
+    const buyCls=buy?'color:#4dd4ac;font-weight:800':'color:#8892b8';
+    const verdict=sc>=40?'冲+10%概率高':sc>=30?'有望+10%':'观望';
     const vCls=sc>=40?'color:#ff5e7e;font-weight:800':sc>=30?'color:#ffb457;font-weight:800':'color:#8892b8';
     const chgCls=f.chg>0?'color:#ff5e7e':'color:#4dd4ac';
     const m3Cls=f.m3>=0?'color:#ff5e7e':'color:#4dd4ac';
     h+='<div class="item" data-code="'+f.code+'" style="animation-delay:'+(i*40)+'ms"><div class="rank '+(i===0?'r1':i===1?'r2':i===2?'r3':'')+'">'+(i+1)+'</div>'+
       '<div class="info"><div class="fname">'+nick+'</div><div class="fdesc">'+f.code+' · 今日<span style="'+chgCls+'">'+pct(f.chg)+'</span> · 近5日<span style="'+(f.c5>=0?'color:#ff5e7e':'color:#4dd4ac')+'">'+pct(f.c5)+'</span> · 3月<span style="'+m3Cls+'">'+(f.m3>=0?'+':'')+f.m3+'%</span></div></div>'+
-      '<div class="probbox"><div class="prob" style="'+vCls+'">'+verdict+'</div><div class="plabel">冲刺分 '+sc.toFixed(0)+' · 看涨概率 '+f.prob+'%</div>'+
-      '<div class="bar"><i style="width:'+Math.min(100,sc/0.7)+'%"></i></div></div></div>';
+      '<div class="probbox"><div class="prob" style="'+vCls+'">'+verdict+'</div><div class="plabel">'+buyTxt+' · 冲刺分 '+Math.round(sc)+' · 看涨 '+f.prob+'%</div>'+
+      '<div class="bar"><i style="width:'+Math.min(100,Math.round(sc)/0.7)+'%"></i></div></div></div>';
   });
   S('sprintList').innerHTML=h||'<div class="load" style="color:#8892b8">当前没有符合条件的强势基金，市场整体偏弱，建议观望等行情</div>';
   bindItemEvents('sprintList');
